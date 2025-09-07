@@ -64,7 +64,7 @@ const str = "node: value";
 const loaded = load(str);
 ```
 
-Also wrapper accept url paths for yaml files directly in the place of YAML string, it only accept files that end with .yml or .yaml
+Wrapper accept file system paths for yaml files directly in the place of YAML string, it only accept files that end with .yml or .yaml
 
 ```js
 import { load } from "yaml-extend";
@@ -1450,4 +1450,10 @@ yaml-extend processes modules in three main phases:
 
 ## Contributing
 
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for details on how to report issues, run tests, and submit pull requests.
+
+Please follow the Code of Conduct and include tests for new features or bug fixes.
+
 ## License
+
+`yaml-extend` is released under the [MIT License](LICENSE). See the full license in the `LICENSE` file.

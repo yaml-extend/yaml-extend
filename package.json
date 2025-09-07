@@ -2,23 +2,46 @@
   "name": "@yaml-extend/yaml-extend",
   "version": "1.0.0",
   "description": "Wrapper around `js-yaml` that adds focused, deterministic templating features to YAML: imports, per-module params, locals, private fields, typed expressions and small tag payloads — with caching and a file-watching `LiveLoader`.",
-  "main": "index.js",
   "type": "module",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/cjs/index.js",
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
+    "build": "rollup -c && rollup -c rollup.dts.config.js",
+    "prepare": "npm run build",
     "start": "nodemon ./test/test.js"
   },
   "author": "ZiadTaha62",
   "license": "MIT",
-  "types": "./index.d.ts",
   "dependencies": {
-    "js-yaml": "^4.1.0"
+    "js-yaml": "^4.1.0",
+    "tslib": "^2.8.1"
   },
   "devDependencies": {
+    "@rollup/plugin-typescript": "^12.1.4",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.3.0",
     "nodemon": "^3.1.10",
+    "rollup": "^4.50.1",
+    "rollup-plugin-dts": "^6.2.3",
     "ts-loader": "^9.5.4",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yaml-extend/yaml-extend.git"
   }
 }

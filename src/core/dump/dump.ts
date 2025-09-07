@@ -5,9 +5,9 @@ import { bridgeHandler } from "../bridge.js";
 
 /**
  * Function to dump js value into YAML string.
- * @param obj - Object that will be dumped.
- * @param opts - Options object that controls dump behavior.
- * @returns Dumped string.
+ * @param obj - Js object that will be converted to YAML string
+ * @param opts - Options object passed to control dump behavior.
+ * @returns YAML string of dumped js value.
  */
 export function dump(obj: any, opts?: DumpOptions | undefined): string {
   // if schema is supplied bridge to js-yaml schema

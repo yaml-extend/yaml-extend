@@ -8,9 +8,11 @@ import { writeFile as writeFileAsync } from "fs/promises";
 import { resolve as pathResolve } from "path";
 
 /**
- * Function to resolve YAML files into one resolved normal syntax YAML file by resolving imports, tags, private fields etc... . works sync.
- * @param str - Base YAML string or path of it.
- * @param opts - LoadOptions supplied to load YAML files.
+ * Function to resolve tags and wrapper expressions (imports, params, locals and privates) to generate one resolved YAML string. short hand for calling load()
+ * then dump(). useful to convert YAML modules into one YAML string that will be passed for configiration. works sync.
+ * @param str - YAML string or filesystem path for the YAML file. The loader uses a regex to detect path-like strings; when a path is used it will be resolved
+ * using `opts.basePath` and it will overwite `opts.filepath` value.
+ * @param opts - Options object passed to control resolve behavior.
  */
 export function resolve(str: string, opts?: ResolveOptions): string {
   // read file
@@ -34,9 +36,11 @@ export function resolve(str: string, opts?: ResolveOptions): string {
 }
 
 /**
- * Function to resolve YAML files into one resolved normal syntax YAML file by resolving imports, tags, private fields etc... . works async.
- * @param str - Base YAML string or path of it.
- * @param opts - LoadOptions supplied to load YAML files.
+ * Function to resolve tags and wrapper expressions (imports, params, locals and privates) to generate one resolved YAML string. short hand for calling load()
+ * then dump(). useful to convert YAML modules into one YAML string that will be passed for configiration. works async.
+ * @param str - YAML string or filesystem path for the YAML file. The loader uses a regex to detect path-like strings; when a path is used it will be resolved
+ * using `opts.basePath` and it will overwite `opts.filepath` value.
+ * @param opts - Options object passed to control resolve behavior.
  */
 export async function resolveAsync(
   str: string,

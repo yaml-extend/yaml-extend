@@ -23,7 +23,7 @@ import type { WatchEventType } from "fs";
 import { circularDepClass } from "../circularDep.js";
 
 /**
- * Class that handles multiple YAML file entery points at the same time, while also watching these files and re-load them when they are changed.
+ * Class that handles loading multiple YAML files at the same time while watching loaded files and update there loads as files change.
  */
 export class LiveLoader {
   /** Class to handle file system interactions in live loader. */
@@ -39,15 +39,15 @@ export class LiveLoader {
   #liveLoaderId: string = generateId();
 
   /**
-   * @param opts - Options that controls behavior of loader.
+   * @param opts - Options object passed to control live loader behavior.
    */
   constructor(opts: LiveLoaderOptions) {
     this.setOptions(opts);
   }
 
   /**
-   * Method to set options of the live loader.
-   * @param opts - New options that will be passed.
+   * Method to set options of the class.
+   * @param opts - Options object passed to control live loader behavior.
    */
   setOptions(opts: LiveLoaderOptions) {
     this.#liveLoaderOpts = { ...this.#liveLoaderOpts, ...opts };
@@ -56,10 +56,12 @@ export class LiveLoader {
   }
 
   /**
-   * Method to add YAML file to the live loader using its path. works sync.
-   * @param path - Path of the YAML file.
-   * @param paramsVal - Optional params value to be passed to this loaded module.
-   * @returns Resolved value of YAML file load.
+   * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that
+   * imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled
+   * as sync functions and will not be awaited.
+   * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+   * @param paramsVal - Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
+   * @returns Value of loaded YAML file.
    */
   addModule(path: string, paramsVal?: Record<string, string>): unknown {
     // get resolved path
@@ -96,10 +98,11 @@ export class LiveLoader {
   }
 
   /**
-   * Method to add YAML file to the live loader using its path. works async.
-   * @param path - Path of the YAML file.
-   * @param paramsVal - Optional params value to be passed to this loaded module.
-   * @returns Resolved value of YAML file load.
+   * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported
+   * YAML files in the read YAML string are watched as well. works async so all file watch, reads are async and tags executions will be awaited.
+   * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+   * @param paramsVal - Object of module params aliases and there values to be used in this load.
+   * @returns Value of loaded YAML file.
    */
   async addModuleAsync(
     path: string,
@@ -139,9 +142,9 @@ export class LiveLoader {
   }
 
   /**
-   * Method to get pure load of module (with no paramsVal).
-   * @param path - Path of YAML file
-   * @returns Value of pure load or undefined if file is not loaded.
+   * Method to get cached value of loaded module or file. note that value retuned is module's resolve when paramsVal is undefined (default params value are used).
+   * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+   * @returns Cached value of YAML file with default modules params or undefined if file is not loaded.
    */
   getModule(path: string): unknown | undefined {
     // get resolved path
@@ -150,8 +153,8 @@ export class LiveLoader {
   }
 
   /**
-   * Method to get pure loads of all modules (with no paramsVal).
-   * @returns Object with keys file paths and value of pure load or undefined if file is not loaded.
+   * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when paramsVal is undefined (default params value are used).
+   * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
    */
   getAllModules(): Record<string, unknown | undefined> {
     // check cache using loadId to get paths utilized by the live loader
@@ -163,8 +166,8 @@ export class LiveLoader {
   }
 
   /**
-   * Method to delete YAML file from file being handled by live loader.
-   * @param path - Path of the YAML file.
+   * Method to delete module or file from live loader.
+   * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
    */
   deleteModule(path: string): void {
     // get resolved path
@@ -178,7 +181,7 @@ export class LiveLoader {
   }
 
   /**
-   * Method to delete all YAML files being handled by live loader.
+   * Method to clear cache of live loader by deleting all modules or files from live loader.
    */
   deleteAllModules(): void {
     // check cache using loadId to get paths utilized by the live loader
@@ -188,7 +191,9 @@ export class LiveLoader {
     for (const p of paths) this.deleteModule(p);
   }
 
-  /** Method to remove class and all of its modules from memory. */
+  /**
+   * Method to clear live loader along with all of its watchers and cache from memory.
+   */
   destroy() {
     // delete all modules
     this.deleteAllModules();

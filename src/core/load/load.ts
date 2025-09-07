@@ -54,11 +54,12 @@ const resolveHandler: ResolveHandler = new ResolveHandler(
 // Main load functions.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**
- * Load function to load YAML string into js object. works just like js-yaml load() but str is optional and you can either pass url path of the file or the actual YAML stirng. or just
- * leave it undefined and pass filepath with the path inside opts. works sync as all the file reads and tag executions will be sync.
- * @param str - YAML string or url path for YAML file.
- * @param opts - Options object passed to load function.
- * @returnsL Loaded YAML string into js object.
+ * Function to load YAML string into js value. works sync so all file system reads are sync, also all tag's construct functions executions will be treated as sync
+ * functions and not awaited. If you are using imports or async tag construct functions use loadAsync instead.
+ * @param str - YAML string or filesystem path for the YAML file. The loader uses a regex to detect path-like strings; when a path is used it will be resolved
+ * using `opts.basePath` and it will overwite `opts.filepath` value.
+ * @param opts - Options object passed to control load behavior.
+ * @returns Js value of loaded YAML string.
  */
 export function load(str: string, opts?: LoadOptions): unknown {
   // if no str present throw an error
@@ -140,11 +141,11 @@ export function load(str: string, opts?: LoadOptions): unknown {
 }
 
 /**
- * Load function to load YAML string into js object. works just like js-yaml load() but str is optional and you can either pass url path of the file or the actual YAML stirng. or just
- * leave it undefined and pass filepath with the path inside opts. works async as all the file reads and tag executions will be async.
- * @param str - YAML string or url path for YAML file.
- * @param opts - Options object passed to load function.
- * @returnsL Loaded YAML string into js object.
+ * Function to load YAML string into js value. works async so all file system reads are async, also all tag's construct functions executions are awaited.
+ * @param str - YAML string or filesystem path for the YAML file. The loader uses a regex to detect path-like strings; when a path is used it will be resolved
+ * using `opts.basePath` and it will overwite `opts.filepath` value.
+ * @param opts - Options object passed to control load behavior.
+ * @returns Js value of loaded YAML string.
  */
 export async function loadAsync(
   str: string,

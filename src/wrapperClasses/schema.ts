@@ -1,6 +1,9 @@
 import type { SchemaDefinition } from "../types.js";
 import { Type } from "./type.js";
 
+/**
+ * Schema that holds Types used for loading and dumping YAML string.
+ */
 export class Schema {
   /** Array to hold types added to the schema. */
   #types: Type[] = [];
@@ -9,8 +12,8 @@ export class Schema {
   #group: "FAILSAFE" | "JSON" | "CORE" | "DEFAULT" | undefined;
 
   /**
-   * @param definition - Types definition. can be single Type, array of Types or SchemaDefinition object.
-   * @param group - Optional special group for this schema.
+   * @param definition - Either schema definition or types that will control how parser handle tags in YAML.
+   * @param group - Optional built-in schema to use.
    */
   constructor(
     definition: SchemaDefinition | Type | Type[],
@@ -21,9 +24,8 @@ export class Schema {
   }
 
   /**
-   * Method to extend schema with additional types.
-   * @param types - Types that will be added.
-   * @returns Reference to the same schema.
+   * @param types - Either schema definition or types that will control how parser handle tags in YAML.
+   * @returns Reference to the schema.
    */
   extend(types: SchemaDefinition | Type[] | Type): Schema {
     this.#addTypes(types);

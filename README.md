@@ -233,7 +233,7 @@ Failsafe built-in schema. for more details check `js-yaml` docs.
 
 Class that handles loading multiple YAML files at the same time while watching loaded files and update there loads as files change.
 
-- `constructor(opts: LiveLoaderOptions)` — See [`LiveLoaderOptions`](#liveloaderoptions)
+- `constructor(opts?: LiveLoaderOptions)` — See [`LiveLoaderOptions`](#liveloaderoptions)
   LiveLoader class constructor.
   `opts`: Options object passed to control live loader behavior.
 

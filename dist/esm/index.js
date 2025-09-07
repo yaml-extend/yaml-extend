@@ -3000,7 +3000,8 @@ class LiveLoader {
         _LiveLoader_liveLoaderOpts.set(this, { basePath: process.cwd() });
         /** Random id generated for live loader and used as loadId in load function. */
         _LiveLoader_liveLoaderId.set(this, generateId());
-        this.setOptions(opts);
+        if (opts)
+            this.setOptions(opts);
     }
     /**
      * Method to set options of the class.

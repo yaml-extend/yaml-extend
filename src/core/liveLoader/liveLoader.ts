@@ -43,8 +43,8 @@ export class LiveLoader {
   /**
    * @param opts - Options object passed to control live loader behavior.
    */
-  constructor(opts: LiveLoaderOptions) {
-    this.setOptions(opts);
+  constructor(opts?: LiveLoaderOptions) {
+    if (opts) this.setOptions(opts);
   }
 
   /**

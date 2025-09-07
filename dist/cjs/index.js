@@ -3113,6 +3113,30 @@ class LiveLoader {
         return modules;
     }
     /**
+     * Method to get all cached data about specific module. note that they are passed by reference and should never be mutated.
+     * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+     * @returns Module load cache object.
+     */
+    getCache(path) {
+        // get resolved path
+        const resPath = resolvePath(path, __classPrivateFieldGet(this, _LiveLoader_liveLoaderOpts, "f").basePath);
+        return getModuleCache(resPath);
+    }
+    /**
+     * Method to get all cached data of all loaded module. note that they are passed by reference and should never be mutated.
+     * @returns Object with keys resolved paths of loaded YAML files and values Module cache objects for these module.
+     */
+    getAllCache() {
+        // check cache using loadId to get paths utilized by the live loader
+        const paths = loadIdsToModules.get(__classPrivateFieldGet(this, _LiveLoader_liveLoaderId, "f"));
+        if (!paths)
+            return {};
+        let caches = {};
+        for (const p of paths)
+            caches[p] = this.getCache(p);
+        return caches;
+    }
+    /**
      * Method to delete module or file from live loader.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
      */

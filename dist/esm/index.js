@@ -1258,7 +1258,7 @@ class ImportHandler {
         // remove file name from module path if present
         const dirModulePath = __classPrivateFieldGet(this, _ImportHandler_instances, "m", _ImportHandler_removeFileName).call(this, modulePath);
         // resolve path by adding targer path to module path
-        const resPath = __classPrivateFieldGet(this, _ImportHandler_instances, "m", _ImportHandler_handlePath).call(this, (_a = loadOpts === null || loadOpts === void 0 ? void 0 : loadOpts.basePath) !== null && _a !== void 0 ? _a : process.cwd(), dirModulePath, targetPath, loadId);
+        const resPath = __classPrivateFieldGet(this, _ImportHandler_instances, "m", _ImportHandler_handlePath).call(this, (_a = loadOpts === null || loadOpts === void 0 ? void 0 : loadOpts.basePath) !== null && _a !== void 0 ? _a : process.cwd(), dirModulePath, targetPath, loadOpts, loadId);
         // read YAML file and get string
         const str = readFileSync(resPath, { encoding: "utf8" });
         // load str
@@ -1284,7 +1284,7 @@ class ImportHandler {
         // remove file name from module path if present
         const dirModulePath = __classPrivateFieldGet(this, _ImportHandler_instances, "m", _ImportHandler_removeFileName).call(this, modulePath);
         // resolve path by adding targer path to module path
-        const resPath = __classPrivateFieldGet(this, _ImportHandler_instances, "m", _ImportHandler_handlePath).call(this, (_a = loadOpts === null || loadOpts === void 0 ? void 0 : loadOpts.basePath) !== null && _a !== void 0 ? _a : process.cwd(), dirModulePath, targetPath, loadId);
+        const resPath = __classPrivateFieldGet(this, _ImportHandler_instances, "m", _ImportHandler_handlePath).call(this, (_a = loadOpts === null || loadOpts === void 0 ? void 0 : loadOpts.basePath) !== null && _a !== void 0 ? _a : process.cwd(), dirModulePath, targetPath, loadOpts, loadId);
         // read YAML file and get string
         const str = await readFile$1(resPath, { encoding: "utf8" });
         // load str
@@ -1297,12 +1297,12 @@ class ImportHandler {
         return load;
     }
 }
-_ImportHandler_load = new WeakMap(), _ImportHandler_loadAsync = new WeakMap(), _ImportHandler_instances = new WeakSet(), _ImportHandler_handlePath = function _ImportHandler_handlePath(basePath, modulePath, targetPath, loadId) {
+_ImportHandler_load = new WeakMap(), _ImportHandler_loadAsync = new WeakMap(), _ImportHandler_instances = new WeakSet(), _ImportHandler_handlePath = function _ImportHandler_handlePath(basePath, modulePath, targetPath, loadOpts, loadId) {
     // resolve path
     const resPath = resolve$1(modulePath, targetPath);
     // make sure it's inside sandbox
     const isSandboxed = isInsideSandBox(resPath, basePath);
-    if (!isSandboxed)
+    if (!isSandboxed && !loadOpts.unsafe)
         throw new WrapperYAMLException(`Path used: ${targetPath} is out of scope of base path: ${basePath}`);
     const isYaml = isYamlFile(resPath);
     if (!isYaml)

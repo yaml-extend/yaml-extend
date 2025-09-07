@@ -230,6 +230,9 @@ export interface LoadOptions {
    */
   basePath?: string | undefined;
 
+  /** Boolean to disable basePath black boxing. it's not recommend to set it to true unless you have strong reason. */
+  unsafe?: boolean | undefined;
+
   /**
    * The resolved path of the YAML source. Useful for error messages, caching, and resolving relative imports. If you call `load("./file.yaml")` the loader should
    * set this to the resolved absolute path automatically. `Note that imports and caching will not work if filepath is not supplied here or in function's str field.`
@@ -258,6 +261,7 @@ export interface LoadOptions {
 /** Internal, LoadOptions after being handled in load/loadAsync. basePath and paramsVal are not optional. */
 export type HandledLoadOpts = {
   basePath: string;
+  unsafe?: boolean | undefined;
   filepath?: string | undefined;
   paramsVal: Record<string, string>;
   filename?: string | undefined;

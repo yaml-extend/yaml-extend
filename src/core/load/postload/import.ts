@@ -51,6 +51,7 @@ export class ImportHandler {
       loadOpts?.basePath ?? process.cwd(),
       dirModulePath,
       targetPath,
+      loadOpts,
       loadId
     );
 
@@ -96,6 +97,7 @@ export class ImportHandler {
       loadOpts?.basePath ?? process.cwd(),
       dirModulePath,
       targetPath,
+      loadOpts,
       loadId
     );
 
@@ -122,6 +124,7 @@ export class ImportHandler {
    * @param basePath - Base path defined by user in the options (or cwd if was omitted by user) that will contain and sandbox all imports.
    * @param modulePath - Path of the current YAML file.
    * @param targetPath - Path of the imported YAML file.
+   * @param loadOpts - Options object passed to load function and updated using imported module's filepath.
    * @param loadId - Unique id that identifies this load.
    * @returns Resolved safe path that will be passed to fs readFile function.
    */
@@ -129,6 +132,7 @@ export class ImportHandler {
     basePath: string,
     modulePath: string,
     targetPath: string,
+    loadOpts: HandledLoadOpts,
     loadId: string
   ): string {
     // resolve path
@@ -136,7 +140,7 @@ export class ImportHandler {
 
     // make sure it's inside sandbox
     const isSandboxed = isInsideSandBox(resPath, basePath);
-    if (!isSandboxed)
+    if (!isSandboxed && !loadOpts.unsafe)
       throw new WrapperYAMLException(
         `Path used: ${targetPath} is out of scope of base path: ${basePath}`
       );

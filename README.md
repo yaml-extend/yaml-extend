@@ -341,6 +341,9 @@ Options object passed to control load behavior. basePath, filpath and paramsVal 
 - `basePath?: string | undefined` — Default: `process.cwd()`
   Filesystem path used as the sandbox root for imports. Prevents access to files outside this directory and is used as the base when resolving relative imports or special `@base/...` import syntax. Example: if basePath is `/proj` and an import says `./configs/a.yaml`, the loader resolves against `/proj`.
 
+- `unsafe?: boolean | undefined` — Default: `false`
+  Boolean to disable basePath black boxing. it's not recommend to set it to true unless you have strong reason.
+
 - `filepath?: string | undefined` — Default: `undefined`
   The resolved path of the YAML source. Useful for error messages, caching, and resolving relative imports. If you call `load("./file.yaml")` the loader should set this to the resolved absolute path automatically. `Note that imports and caching will not work if filepath is not supplied here or in function's str field`.
 
@@ -436,6 +439,9 @@ Options object passed to control liveLoader behavior.
 
 - `basePath?: string` — Default: `process.cwd()`
   Filesystem path used as the sandbox root for imports. Prevents access to files outside this directory and is used as the base when resolving relative imports or special `@base/...` import syntax. Example: if basePath is `/proj` and an import says `./configs/a.yaml`, the loader resolves against `/proj`.
+
+- `unsafe?: boolean | undefined` — Default: `false`
+  Boolean to disable basePath black boxing. it's not recommend to set it to true unless you have strong reason.
 
 - `onWarning?: (this: null, err: YAMLException | WrapperYAMLException) => void` — Default: `undefined` — see [`YAMLException`](#yamlexception) / [`WrapperYAMLException`](#wrapperyamlexception)
   Function to call on warning messages.

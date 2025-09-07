@@ -2,6 +2,7 @@ import {
   LiveLoaderOptions,
   WrapperYAMLException,
   YAMLException,
+  ModuleLoadCache,
 } from "../../types.js";
 import { FileSystem } from "./fileSystem.js";
 import { Debouncer } from "./debouncer.js";
@@ -10,6 +11,7 @@ import {
   deleteModuleCache,
   resetModuleCache,
   getLoadCache,
+  getModuleCache,
   deleteLoadIdFromCache,
 } from "../cache.js";
 import { internalLoad, internalLoadAsync } from "../load/load.js";
@@ -156,13 +158,37 @@ export class LiveLoader {
    * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when paramsVal is undefined (default params value are used).
    * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
    */
-  getAllModules(): Record<string, unknown | undefined> {
+  getAllModules(): Record<string, unknown> {
     // check cache using loadId to get paths utilized by the live loader
     const paths = loadIdsToModules.get(this.#liveLoaderId);
     if (!paths) return {};
     let modules: Record<string, unknown> = {};
-    for (const p of paths) modules[p] = this.getModule(p);
+    for (const p of paths) modules[p] = this.getModule(p) as unknown;
     return modules;
+  }
+
+  /**
+   * Method to get all cached data about specific module. note that they are passed by reference and should never be mutated.
+   * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+   * @returns Module load cache object.
+   */
+  getCache(path: string): ModuleLoadCache | undefined {
+    // get resolved path
+    const resPath = resolvePath(path, this.#liveLoaderOpts.basePath!);
+    return getModuleCache(resPath);
+  }
+
+  /**
+   * Method to get all cached data of all loaded module. note that they are passed by reference and should never be mutated.
+   * @returns Object with keys resolved paths of loaded YAML files and values Module cache objects for these module.
+   */
+  getAllCache(): Record<string, ModuleLoadCache> {
+    // check cache using loadId to get paths utilized by the live loader
+    const paths = loadIdsToModules.get(this.#liveLoaderId);
+    if (!paths) return {};
+    let caches: Record<string, ModuleLoadCache> = {};
+    for (const p of paths) caches[p] = this.getCache(p) as ModuleLoadCache;
+    return caches;
   }
 
   /**

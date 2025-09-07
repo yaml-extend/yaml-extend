@@ -142,7 +142,7 @@ Function to resolve tags and wrapper expressions (imports, params, locals and pr
 
 - `returns` — Resolved YAML string.
 
-#### resolveAsync
+#### resolveAsync(str: string, opts?: ResolveOptions)
 
 Function to resolve tags and wrapper expressions (imports, params, locals and privates) to generate one resolved YAML string. short hand for calling load() then dump(). useful to convert YAML modules into one YAML string that will be passed for configiration. works async.
 
@@ -261,6 +261,15 @@ Class that handles loading multiple YAML files at the same time while watching l
 - `getAllModules() => Record<string, unknown>`
   Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when paramsVal is undefined (default params value are used).
   `returns`: Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
+
+- `getCache(path: string) => ModuleLoadCache` see [Caching](#caching-concise)
+  Method to get all cached data about specific module. `note that they are passed by reference and should never be mutated`.
+  `path`: Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+  `returns`: Module load cache object.
+
+-` getAllCache() => Record<string, ModuleLoadCache>` see [Caching](#caching-concise)
+Method to get all cached data of all loaded module. note that they are passed by reference and should never be mutated.
+`returns`: Object with keys resolved paths of loaded YAML files and values Module load cache objects for these module..
 
 - `deleteModule(path: string) => void`
   Method to delete module or file from live loader.
@@ -596,7 +605,7 @@ I like YAML: it's simple and very readable compared with other serialization for
 
 But as the schema grew, YAML’s simplicity revealed some limitations: `no native imports, no parameterization, and limited reuse without anchors/aliases`. People sometimes bend YAML tags to compensate, but tags are meant for type transformation; using them for imports introduces complexity and inconsistent behavior across tools.
 
-When designing `yaml-extend` my primary goal was: `keep the document node tree clean and close to normal YAML`, while adding a small set of features that make large schemas maintainable and developer-friendly. To do that I introduced:
+When designing `yaml-extend` my primary goal was: `keep the document node tree clean and close to normal YAML`, while adding a small set of features that make large schemas maintainable and developer-friendly. To do this to main concepts are used:
 
 `Directives` — top-of-file declarations (separated from the node tree)
 
@@ -1433,12 +1442,14 @@ yaml-extend processes modules in three main phases:
 
 ### Caching (concise)
 
-- Cache entries are keyed by file path and parameter signature. Each file-level entry stores:
+- Cache entries are keyed by file path and parameter signature. Each file-level entry stores and object called `ModuleLoadCache` with this structure:
 
   - `str` (YAML text),
-  - `hash` (str hash),
+  - `hashedStr` (str hash),
   - `blueprint` (generated blueprint),
-  - `directives object` (object that holds data from directives).
+  - `dirObj` (object that holds data from directives).
+  - `resPath` (resolved path of YAML file).
+  - `loadCache` (Map of all loads from different module params).
 
 - Because the same file can be loaded with different `%PARAM` values, the cache includes param-level entries keyed by `hash(params)` so resolved outputs are reusable per parameter set.
 

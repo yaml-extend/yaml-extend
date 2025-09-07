@@ -1,6 +1,6 @@
 {
   "name": "yaml-extend",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Wrapper around `js-yaml` that adds focused, deterministic templating features to YAML: imports, per-module params, locals, private fields, typed expressions and small tag payloads — with caching and a file-watching `LiveLoader`.",
   "type": "module",
   "main": "dist/cjs/index.js",
@@ -19,7 +19,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "rollup -c && rollup -c rollup.dts.config.js",
+    "build": "rollup -c --no-cache && rollup -c rollup.dts.config.js --no-cache",
     "prepare": "npm run build",
     "start": "nodemon ./test/test.js"
   },

@@ -1,0 +1,24 @@
+{
+  "name": "@yaml-extend/yaml-extend",
+  "version": "1.0.0",
+  "description": "Wrapper around `js-yaml` that adds focused, deterministic templating features to YAML: imports, per-module params, locals, private fields, typed expressions and small tag payloads — with caching and a file-watching `LiveLoader`.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "nodemon ./test/test.js"
+  },
+  "author": "ZiadTaha62",
+  "license": "MIT",
+  "types": "./index.d.ts",
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.3.0",
+    "nodemon": "^3.1.10",
+    "ts-loader": "^9.5.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

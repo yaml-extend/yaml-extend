@@ -1,4 +1,4 @@
-import { load as JLoad, YAMLException } from "js-yaml";
+import { load as JLoad } from "js-yaml";
 import type { LoadOptions as jLoadOptions } from "js-yaml";
 import type {
   DirectivesObj,
@@ -10,7 +10,7 @@ import { TagsHandler } from "./preload/tagHandlers.js";
 import { bridgeHandler } from "../bridge.js";
 import { DirectivesHandler } from "./preload/directives.js";
 import { ResolveHandler } from "./postload/resolveHandler.js";
-import { WrapperYAMLException } from "../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../wrapperClasses/wrapperError.js";
 import { circularDepClass } from "../circularDep.js";
 import {
   readFile,
@@ -64,7 +64,7 @@ const resolveHandler: ResolveHandler = new ResolveHandler(
 export function load(str: string, opts?: LoadOptions): unknown {
   // if no str present throw an error
   if (str === undefined)
-    throw new YAMLException(
+    throw new WrapperYAMLException(
       `You should pass either YAML string or url path of YAML file in str.`
     );
 
@@ -85,9 +85,9 @@ export function load(str: string, opts?: LoadOptions): unknown {
   if (str === undefined) str = rootFileRead(handledOpts);
 
   try {
-    // define vars that will hold blueprint and dirObj
+    // define vars that will hold blueprint and directives
     let blueprint: ModuleLoadCache["blueprint"];
-    let dirObj: ModuleLoadCache["dirObj"];
+    let directives: ModuleLoadCache["directives"];
 
     // get cache of the module
     const cachedModule = getModuleCache(handledOpts.filepath, str);
@@ -95,19 +95,16 @@ export function load(str: string, opts?: LoadOptions): unknown {
     // if module is cached get blue print and dir obj from it directly, if not execute string
     if (cachedModule && cachedModule.blueprint !== undefined) {
       blueprint = cachedModule.blueprint;
-      dirObj = cachedModule.dirObj;
+      directives = cachedModule.directives;
     } else {
       // execute string
       const val = handleNewModule(str, handledOpts, loadId);
       blueprint = val.blueprint;
-      dirObj = val.dirObj;
+      directives = val.directives;
     }
 
     // check if load with params is present in the cache
-    const cachedLoad = getLoadCache(
-      handledOpts.filepath,
-      handledOpts.paramsVal
-    );
+    const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
     if (cachedLoad !== undefined) return cachedLoad.load;
@@ -116,15 +113,15 @@ export function load(str: string, opts?: LoadOptions): unknown {
     const load = resolveHandler.resolve(
       handledOpts.filepath,
       blueprint,
-      dirObj,
-      handledOpts.paramsVal ?? {},
+      directives,
+      handledOpts.params ?? {},
       loadId,
       handledOpts
     );
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.paramsVal, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load);
 
     // return load
     return load;
@@ -153,7 +150,7 @@ export async function loadAsync(
 ): Promise<unknown> {
   // if no str present throw an error
   if (str === undefined)
-    throw new YAMLException(
+    throw new WrapperYAMLException(
       `You should pass either YAML string or url path of YAML file in str.`
     );
 
@@ -171,9 +168,9 @@ export async function loadAsync(
   }
 
   try {
-    // define vars that will hold blueprint and dirObj
+    // define vars that will hold blueprint and directives
     let blueprint: ModuleLoadCache["blueprint"];
-    let dirObj: ModuleLoadCache["dirObj"];
+    let directives: ModuleLoadCache["directives"];
 
     // get cache of the module
     const cachedModule = getModuleCache(handledOpts.filepath, str);
@@ -181,18 +178,15 @@ export async function loadAsync(
     // if module is cached get blue print and dir obj from it directly, if not execute string
     if (cachedModule && cachedModule.blueprint !== undefined) {
       blueprint = cachedModule.blueprint;
-      dirObj = cachedModule.dirObj;
+      directives = cachedModule.directives;
     } else {
       const val = await handleNewModuleAsync(str, handledOpts, loadId);
       blueprint = val.blueprint;
-      dirObj = val.dirObj;
+      directives = val.directives;
     }
 
     // check if load with params is present in the cache
-    const cachedLoad = getLoadCache(
-      handledOpts.filepath,
-      handledOpts.paramsVal
-    );
+    const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
     if (cachedLoad !== undefined) return cachedLoad.load;
@@ -201,15 +195,15 @@ export async function loadAsync(
     const load = await resolveHandler.resolveAsync(
       handledOpts.filepath,
       blueprint,
-      dirObj,
-      handledOpts.paramsVal ?? {},
+      directives,
+      handledOpts.params ?? {},
       loadId,
       handledOpts
     );
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.paramsVal, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load);
 
     // return load
     return load;
@@ -245,9 +239,9 @@ export function internalLoad(
   const handledOpts = handleOpts(opts);
 
   try {
-    // define vars that will hold blueprint and dirObj
+    // define vars that will hold blueprint and directives
     let blueprint: ModuleLoadCache["blueprint"];
-    let dirObj: ModuleLoadCache["dirObj"];
+    let directives: ModuleLoadCache["directives"];
 
     // get cache of the module
     const cachedModule = getModuleCache(handledOpts.filepath, str);
@@ -255,18 +249,15 @@ export function internalLoad(
     // if module is cached get blue print and dir obj from it directly, if not execute string
     if (cachedModule && cachedModule.blueprint !== undefined) {
       blueprint = cachedModule.blueprint;
-      dirObj = cachedModule.dirObj;
+      directives = cachedModule.directives;
     } else {
       const val = handleNewModule(str, handledOpts, loadId);
       blueprint = val.blueprint;
-      dirObj = val.dirObj;
+      directives = val.directives;
     }
 
     // check if load with params is present in the cache
-    const cachedLoad = getLoadCache(
-      handledOpts.filepath,
-      handledOpts.paramsVal
-    );
+    const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
     if (cachedLoad !== undefined) return cachedLoad.load;
@@ -275,15 +266,15 @@ export function internalLoad(
     const load = resolveHandler.resolve(
       handledOpts.filepath,
       blueprint,
-      dirObj,
-      handledOpts.paramsVal ?? {},
+      directives,
+      handledOpts.params ?? {},
       loadId,
       handledOpts
     );
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.paramsVal, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load);
 
     // return load
     return load;
@@ -313,9 +304,9 @@ export async function internalLoadAsync(
   const handledOpts = handleOpts(opts);
 
   try {
-    // define vars that will hold blueprint and dirObj
+    // define vars that will hold blueprint and directives
     let blueprint: ModuleLoadCache["blueprint"];
-    let dirObj: ModuleLoadCache["dirObj"];
+    let directives: ModuleLoadCache["directives"];
 
     // get cache of the module
     const cachedModule = getModuleCache(handledOpts.filepath, str);
@@ -323,18 +314,15 @@ export async function internalLoadAsync(
     // if module is cached get blue print and dir obj from it directly, if not execute string
     if (cachedModule && cachedModule.blueprint !== undefined) {
       blueprint = cachedModule.blueprint;
-      dirObj = cachedModule.dirObj;
+      directives = cachedModule.directives;
     } else {
       const val = await handleNewModuleAsync(str, handledOpts, loadId);
       blueprint = val.blueprint;
-      dirObj = val.dirObj;
+      directives = val.directives;
     }
 
     // check if load with params is present in the cache
-    const cachedLoad = getLoadCache(
-      handledOpts.filepath,
-      handledOpts.paramsVal
-    );
+    const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
     if (cachedLoad !== undefined) return cachedLoad.load;
@@ -343,15 +331,15 @@ export async function internalLoadAsync(
     const load = await resolveHandler.resolveAsync(
       handledOpts.filepath,
       blueprint,
-      dirObj,
-      handledOpts.paramsVal ?? {},
+      directives,
+      handledOpts.params ?? {},
       loadId,
       handledOpts
     );
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.paramsVal, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load);
 
     // return load
     return load;
@@ -377,11 +365,11 @@ function handleOpts(opts: LoadOptions | undefined): HandledLoadOpts {
     ? resolve(process.cwd(), opts.basePath)
     : process.cwd();
   const filepath = opts?.filepath && resolve(basePath, opts.filepath);
-  const paramsVal = opts?.paramsVal ?? {};
+  const params = opts?.params ?? {};
   return {
     ...opts,
     basePath,
-    paramsVal,
+    params,
     filepath,
   } as HandledLoadOpts;
 }
@@ -398,9 +386,9 @@ function rootFileRead(opts: HandledLoadOpts): string {
       `You should pass either a string to read or filepath of the YAML file.`
     );
   // resolve path
-  const resPath = resolvePath(opts.filepath, opts.basePath!);
+  const resolvedPath = resolvePath(opts.filepath, opts.basePath!);
   // read file
-  return readFile(resPath, opts.basePath!);
+  return readFile(resolvedPath, opts.basePath!);
 }
 
 /**
@@ -415,9 +403,9 @@ async function rootFileReadAsync(opts: HandledLoadOpts): Promise<string> {
       `You should pass either a string to read or filepath of the YAML file.`
     );
   // resolve path
-  const resPath = resolvePath(opts.filepath, opts.basePath!);
+  const resolvedPath = resolvePath(opts.filepath, opts.basePath!);
   // read file
-  return await readFileAsync(resPath, opts.basePath!);
+  return await readFileAsync(resolvedPath, opts.basePath!);
 }
 
 /**
@@ -432,25 +420,25 @@ function handleNewModule(
   str: string,
   opts: HandledLoadOpts,
   loadId: string
-): { blueprint: unknown; dirObj: DirectivesObj } {
+): { blueprint: unknown; directives: DirectivesObj } {
   // execute string
   const val = executeStr(str, opts, loadId);
   const blueprint = val.blueprint;
-  const dirObj = val.dirObj;
+  const directives = val.directives;
   // resolve with undefined params and add load to the cache if filepath is supplied
   if (opts.filepath) {
     const load = resolveHandler.resolve(
       opts.filepath,
       blueprint,
-      dirObj,
+      directives,
       {},
       loadId,
       opts
     );
-    addLoadCache(opts.filepath, opts.paramsVal, load);
+    addLoadCache(opts.filepath, opts.params, load);
   }
   // return blueprint and directives object
-  return { blueprint, dirObj };
+  return { blueprint, directives };
 }
 
 /**
@@ -465,24 +453,24 @@ async function handleNewModuleAsync(
   str: string,
   opts: HandledLoadOpts,
   loadId: string
-): Promise<{ blueprint: unknown; dirObj: DirectivesObj }> {
+): Promise<{ blueprint: unknown; directives: DirectivesObj }> {
   // execute string
   const val = await executeStrAsync(str, opts, loadId);
   const blueprint = val.blueprint;
-  const dirObj = val.dirObj;
+  const directives = val.directives;
   // resolve with undefined params
   const load = await resolveHandler.resolveAsync(
     opts.filepath,
     blueprint,
-    dirObj,
+    directives,
     {},
     loadId,
     opts
   );
   // add load to the cache if filepath is supplied
-  if (opts.filepath) addLoadCache(opts.filepath, opts.paramsVal, load);
+  if (opts.filepath) addLoadCache(opts.filepath, opts.params, load);
   // return blueprint and directives object
-  return { blueprint, dirObj };
+  return { blueprint, directives };
 }
 
 /**
@@ -497,25 +485,25 @@ function executeStr(
   str: string,
   opts: HandledLoadOpts,
   loadId: string
-): { blueprint: unknown; dirObj: DirectivesObj } {
+): { blueprint: unknown; directives: DirectivesObj } {
   // read directives
-  const dirObj = directivesHandler.handle(str);
+  const directives = directivesHandler.handle(str);
 
   // overwrite filename if defined in directives
-  if (dirObj.filename) opts.filename = dirObj.filename;
+  if (directives.filename) opts.filename = directives.filename;
 
   // load all imports with there default params
-  for (const imp of dirObj.importsMap.values()) {
-    const paramsVal = imp.paramsVal;
+  for (const imp of directives.importsMap.values()) {
+    const params = imp.params;
     const path = imp.path;
-    internalLoad(path, { ...opts, paramsVal }, loadId);
+    internalLoad(path, { ...opts, params }, loadId);
   }
 
   // handle tags by fetching them then converting them to wrapper types
   const tags = tagsHandler.captureTags(str);
   const types = tagsHandler.convertTagsToTypes(
     tags,
-    dirObj.tagsMap,
+    directives.tagsMap,
     opts.schema
   );
 
@@ -533,10 +521,10 @@ function executeStr(
 
   // add blueprint along with other module's data to the cache
   if (opts.filepath)
-    addModuleCache(loadId, str, opts.filepath, blueprint, dirObj);
+    addModuleCache(loadId, str, opts.filepath, blueprint, directives);
 
   // return blueprint
-  return { blueprint, dirObj };
+  return { blueprint, directives };
 }
 
 /**
@@ -551,25 +539,25 @@ async function executeStrAsync(
   str: string,
   opts: HandledLoadOpts,
   loadId: string
-): Promise<{ blueprint: unknown; dirObj: DirectivesObj }> {
+): Promise<{ blueprint: unknown; directives: DirectivesObj }> {
   // read directives
-  const dirObj = directivesHandler.handle(str);
+  const directives = directivesHandler.handle(str);
 
   // overwrite filename if defined in directives
-  if (dirObj.filename) opts.filename = dirObj.filename;
+  if (directives.filename) opts.filename = directives.filename;
 
   // load all imports with there default params
-  for (const imp of dirObj.importsMap.values()) {
-    const paramsVal = imp.paramsVal;
+  for (const imp of directives.importsMap.values()) {
+    const params = imp.params;
     const path = imp.path;
-    await internalLoadAsync(path, { ...opts, paramsVal }, loadId);
+    await internalLoadAsync(path, { ...opts, params }, loadId);
   }
 
   // handle tags by fetching them then converting them to wrapper types
   const tags = tagsHandler.captureTags(str);
   const types = tagsHandler.convertTagsToTypes(
     tags,
-    dirObj.tagsMap,
+    directives.tagsMap,
     opts.schema
   );
 
@@ -587,10 +575,10 @@ async function executeStrAsync(
 
   // add blueprint along with other module's data to the cache
   if (opts.filepath)
-    addModuleCache(loadId, str, opts.filepath, blueprint, dirObj);
+    addModuleCache(loadId, str, opts.filepath, blueprint, directives);
 
   // return blueprint
-  return { blueprint, dirObj };
+  return { blueprint, directives };
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,7 +1,7 @@
 import { resolve, dirname } from "path";
 import { readFile as readFileAsync } from "fs/promises";
 import { readFileSync } from "fs";
-import { WrapperYAMLException } from "../../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../../wrapperClasses/wrapperError.js";
 import {
   HandledLoadOpts,
   InternalLoad,
@@ -13,18 +13,18 @@ import { isInsideSandBox, isYamlFile } from "../../helpers.js";
 /** Class to handle importing another YAML files. */
 export class ImportHandler {
   /** Internal load function used to load imported YAML files. */
-  #load: InternalLoad;
+  private _load: InternalLoad;
 
   /** Internal load async function used to load imported YAML files. */
-  #loadAsync: InternalLoadAsync;
+  private _loadAsync: InternalLoadAsync;
 
   /**
    * @param load - Reference to internalLoad function, so it can be used in $import interpolation. passed like this to avoid circular dependency.
    * @param loadAsync - Reference to internalLoadAsync function, so it can be used in $import interpolation. passed like this to avoid circular dependency.
    */
   constructor(load: InternalLoad, loadAsync: InternalLoadAsync) {
-    this.#load = load;
-    this.#loadAsync = loadAsync;
+    this._load = load;
+    this._loadAsync = loadAsync;
   }
 
   /**
@@ -44,10 +44,10 @@ export class ImportHandler {
     loadId: string
   ) {
     // remove file name from module path if present
-    const dirModulePath = this.#removeFileName(modulePath);
+    const dirModulePath = this._removeFileName(modulePath);
 
     // resolve path by adding targer path to module path
-    const resPath = this.#handlePath(
+    const resolvedPath = this._handlePath(
       loadOpts?.basePath ?? process.cwd(),
       dirModulePath,
       targetPath,
@@ -56,15 +56,15 @@ export class ImportHandler {
     );
 
     // read YAML file and get string
-    const str = readFileSync(resPath, { encoding: "utf8" });
+    const str = readFileSync(resolvedPath, { encoding: "utf8" });
 
     // load str
-    const load = this.#load(
+    const load = this._load(
       str,
       {
         ...loadOpts,
-        paramsVal: targetParams,
-        filepath: resPath,
+        params: targetParams,
+        filepath: resolvedPath,
       },
       loadId
     );
@@ -90,10 +90,10 @@ export class ImportHandler {
     loadId: string
   ) {
     // remove file name from module path if present
-    const dirModulePath = this.#removeFileName(modulePath);
+    const dirModulePath = this._removeFileName(modulePath);
 
     // resolve path by adding targer path to module path
-    const resPath = this.#handlePath(
+    const resolvedPath = this._handlePath(
       loadOpts?.basePath ?? process.cwd(),
       dirModulePath,
       targetPath,
@@ -102,15 +102,15 @@ export class ImportHandler {
     );
 
     // read YAML file and get string
-    const str = await readFileAsync(resPath, { encoding: "utf8" });
+    const str = await readFileAsync(resolvedPath, { encoding: "utf8" });
 
     // load str
-    const load = await this.#loadAsync(
+    const load = await this._loadAsync(
       str,
       {
         ...loadOpts,
-        paramsVal: targetParams,
-        filepath: resPath,
+        params: targetParams,
+        filepath: resolvedPath,
       },
       loadId
     );
@@ -128,7 +128,7 @@ export class ImportHandler {
    * @param loadId - Unique id that identifies this load.
    * @returns Resolved safe path that will be passed to fs readFile function.
    */
-  #handlePath(
+  private _handlePath(
     basePath: string,
     modulePath: string,
     targetPath: string,
@@ -136,30 +136,34 @@ export class ImportHandler {
     loadId: string
   ): string {
     // resolve path
-    const resPath = resolve(modulePath, targetPath);
+    const resolvedPath = resolve(modulePath, targetPath);
 
     // make sure it's inside sandbox
-    const isSandboxed = isInsideSandBox(resPath, basePath);
+    const isSandboxed = isInsideSandBox(resolvedPath, basePath);
     if (!isSandboxed && !loadOpts.unsafe)
       throw new WrapperYAMLException(
         `Path used: ${targetPath} is out of scope of base path: ${basePath}`
       );
 
-    const isYaml = isYamlFile(resPath);
+    const isYaml = isYamlFile(resolvedPath);
     if (!isYaml)
       throw new WrapperYAMLException(
-        `You can only load YAML files the loader. loaded file: ${resPath}`
+        `You can only load YAML files the loader. loaded file: ${resolvedPath}`
       );
 
     // detect circular dependency if present
-    const circularDep = circularDepClass.addDep(modulePath, resPath, loadId);
+    const circularDep = circularDepClass.addDep(
+      modulePath,
+      resolvedPath,
+      loadId
+    );
     if (circularDep)
       throw new WrapperYAMLException(
         `Circular dependency detected: ${circularDep.join(" -> ")}`
       );
 
     // return path
-    return resPath;
+    return resolvedPath;
   }
 
   /**
@@ -167,7 +171,7 @@ export class ImportHandler {
    * @param path - Path that will be handled.
    * @returns Path after file name removal.
    */
-  #removeFileName(path: string): string {
+  private _removeFileName(path: string): string {
     return isYamlFile(path) ? dirname(path) : path;
   }
 }

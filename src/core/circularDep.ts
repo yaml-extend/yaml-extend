@@ -3,7 +3,7 @@
  */
 export class CircularDepHandler {
   /** adjacency list: node -> set of dependencies (edges node -> dep) */
-  #graphs: Map<string, Map<string, Set<string>>> = new Map();
+  private _graphs: Map<string, Map<string, Set<string>>> = new Map();
 
   /**
    * Method to handle checking of the circular dependency.
@@ -18,10 +18,10 @@ export class CircularDepHandler {
     loadId: string
   ): string[] | null {
     // get graph for this loadId
-    let graph = this.#graphs.get(loadId);
+    let graph = this._graphs.get(loadId);
     if (!graph) {
       graph = new Map();
-      this.#graphs.set(loadId, graph);
+      this._graphs.set(loadId, graph);
     }
 
     // ensure nodes exist
@@ -37,7 +37,7 @@ export class CircularDepHandler {
 
     // Now check if there's a path from targetPath back to modulePath.
     // If so, we constructed a cycle.
-    const path = this.#findPath(targetPath, modulePath, graph);
+    const path = this._findPath(targetPath, modulePath, graph);
     if (path) {
       // path is [targetPath, ..., modulePath]
       // cycle: [modulePath, targetPath, ..., modulePath]
@@ -54,7 +54,7 @@ export class CircularDepHandler {
    */
   deleteDep(modulePath: string, loadId: string): void {
     // get graph for this loadId
-    const graph = this.#graphs.get(loadId);
+    const graph = this._graphs.get(loadId);
     if (!graph) return;
 
     // remove outgoing edges (delete node key)
@@ -71,11 +71,11 @@ export class CircularDepHandler {
    * @param loadId - Unique id that identifies this load.
    */
   deleteLoadId(loadId: string): void {
-    this.#graphs.delete(loadId);
+    this._graphs.delete(loadId);
   }
 
   /** Method to find path of circular dependency. */
-  #findPath(
+  private _findPath(
     start: string,
     target: string,
     graph: Map<string, Set<string>>

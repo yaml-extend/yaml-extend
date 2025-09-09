@@ -2,7 +2,7 @@ import { load, loadAsync } from "../load/load.js";
 import { dump } from "../dump/dump.js";
 import { ResolveOptions } from "../../types.js";
 import { isYamlFile } from "../helpers.js";
-import { WrapperYAMLException } from "../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../wrapperClasses/wrapperError.js";
 import { writeFileSync } from "fs";
 import { writeFile as writeFileAsync } from "fs/promises";
 import { resolve as pathResolve } from "path";
@@ -22,14 +22,14 @@ export function resolve(str: string, opts?: ResolveOptions): string {
   // if output path is supplied write file
   if (opts?.outputPath) {
     // resolve target path
-    const resPath = handleTargetPath(opts.outputPath, opts.basePath);
+    const resolvedPath = handleTargetPath(opts.outputPath, opts.basePath);
     // make sure supplied path is yaml file
-    const isYaml = isYamlFile(resPath);
+    const isYaml = isYamlFile(resolvedPath);
     if (!isYaml)
       throw new WrapperYAMLException(
         `Target path supplied to resolve function is not YALM file.`
       );
-    writeFileSync(resPath, dumped, { encoding: "utf8" });
+    writeFileSync(resolvedPath, dumped, { encoding: "utf8" });
   }
   // return dumped value
   return dumped;
@@ -53,14 +53,14 @@ export async function resolveAsync(
   // if output path is supplied write file
   if (opts?.outputPath) {
     // resolve target path
-    const resPath = handleTargetPath(opts.outputPath, opts.basePath);
+    const resolvedPath = handleTargetPath(opts.outputPath, opts.basePath);
     // make sure supplied path is yaml file
-    const isYaml = isYamlFile(resPath);
+    const isYaml = isYamlFile(resolvedPath);
     if (!isYaml)
       throw new WrapperYAMLException(
         `Target path supplied to resolve function is not YALM file.`
       );
-    writeFileAsync(resPath, dumped, { encoding: "utf8" });
+    writeFileAsync(resolvedPath, dumped, { encoding: "utf8" });
   }
   // return dumped value
   return dumped;

@@ -14,7 +14,7 @@ import {
   ThisExprParts,
   TagDirParts,
 } from "../../types.js";
-import { WrapperYAMLException } from "../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../wrapperClasses/wrapperError.js";
 
 /** Regex that holds escape characters. */
 const ESCAPE_CHAR = /\"|\[/;
@@ -53,35 +53,35 @@ export class Tokenizer {
       }
     | undefined {
     if (dir.startsWith("%TAG"))
-      return { type: "TAG", parts: this.#handleDirTag(dir) };
+      return { type: "TAG", parts: this._handleDirTag(dir) };
     if (dir.startsWith("%FILENAME"))
-      return { type: "FILENAME", parts: this.#handleDirFilename(dir) };
+      return { type: "FILENAME", parts: this._handleDirFilename(dir) };
     if (dir.startsWith("%PARAM"))
-      return { type: "PARAM", parts: this.#handleDirParam(dir) };
+      return { type: "PARAM", parts: this._handleDirParam(dir) };
     if (dir.startsWith("%LOCAL"))
-      return { type: "LOCAL", parts: this.#handleDirLocal(dir) };
+      return { type: "LOCAL", parts: this._handleDirLocal(dir) };
     if (dir.startsWith("%IMPORT"))
-      return { type: "IMPORT", parts: this.#handleDirImport(dir) };
+      return { type: "IMPORT", parts: this._handleDirImport(dir) };
     if (dir.startsWith("%PRIVATE"))
-      return { type: "PRIVATE", parts: this.#handleDirPrivate(dir) };
+      return { type: "PRIVATE", parts: this._handleDirPrivate(dir) };
   }
 
   handleExpression(
     expr: string
   ): { type: ExpressionTypes; parts: Partial<ExpressionPartsObj> } | undefined {
     if (expr.startsWith("$this"))
-      return { type: "this", parts: this.#handleExprThis(expr) };
+      return { type: "this", parts: this._handleExprThis(expr) };
     if (expr.startsWith("$import"))
-      return { type: "import", parts: this.#handleExprImport(expr) };
+      return { type: "import", parts: this._handleExprImport(expr) };
     if (expr.startsWith("$local"))
-      return { type: "local", parts: this.#handleExprLocal(expr) };
+      return { type: "local", parts: this._handleExprLocal(expr) };
     if (expr.startsWith("$param"))
-      return { type: "param", parts: this.#handleExprParam(expr) };
+      return { type: "param", parts: this._handleExprParam(expr) };
   }
 
   divideNodepath(nodepath: string): string[] {
-    const parts = this.#divideByDelimiter(nodepath, ".");
-    const handledParts = parts.map(this.#removeEscChar);
+    const parts = this._divideByDelimiter(nodepath, ".");
+    const handledParts = parts.map(this._removeEscChar);
     return handledParts;
   }
 
@@ -89,11 +89,11 @@ export class Tokenizer {
   // Directive divide methods.
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   /** Method to handle tag directive deviding into it's structure parts. */
-  #handleDirTag(dir: string): TagDirParts {
+  private _handleDirTag(dir: string): TagDirParts {
     // remove statring %TAG and trim
     const data = dir.replace("%TAG", "").trim();
     // devide directive into parts
-    const parts = this.#divideDirective(data, 2);
+    const parts = this._divideDirective(data, 2);
     const handle = parts[0];
     const prefix = parts[1];
     if (!handle || !prefix)
@@ -104,21 +104,21 @@ export class Tokenizer {
   }
 
   /** Method to handle private directive deviding into it's structure parts. */
-  #handleDirPrivate(dir: string): PrivateDirParts {
+  private _handleDirPrivate(dir: string): PrivateDirParts {
     // remove statring %PRIVATE and trim
     const data = dir.replace("%PRIVATE", "").trim();
     // divide directive into parts, all parts are <private-nodes>
-    const privateNodes = this.#divideDirective(data);
+    const privateNodes = this._divideDirective(data);
     // return private nodes
     return { arrMetadata: privateNodes };
   }
 
   /** Method to handle local directive deviding into it's structure parts. */
-  #handleDirLocal(dir: string): LocalDirParts {
+  private _handleDirLocal(dir: string): LocalDirParts {
     // remove statring %LOCAL and trim
     const data = dir.replace("%LOCAL", "").trim();
     // divide directive into parts, first part is <alias> and second is <def-value>
-    const parts = this.#divideDirective(data, 2);
+    const parts = this._divideDirective(data, 2);
     const alias = parts[0];
     const defValue = parts[1];
     // verify that alais is present
@@ -127,18 +127,18 @@ export class Tokenizer {
         "You should pass alias after '%LOCAL' directive, structure of PARAM directive: %LOCAL <alias>"
       );
     // remove wrapping escape char if present
-    const handledAlias = this.#removeEscChar(alias);
-    const handledDefValue = defValue && this.#removeEscChar(defValue);
+    const handledAlias = this._removeEscChar(alias);
+    const handledDefValue = defValue && this._removeEscChar(defValue);
     // return parts
     return { alias: handledAlias, defValue: handledDefValue };
   }
 
   /** Method to handle param directive deviding into it's structure parts. */
-  #handleDirParam(dir: string): ParamDirParts {
+  private _handleDirParam(dir: string): ParamDirParts {
     // remove statring %PARAM and trim
     const data = dir.replace("%PARAM", "").trim();
     // divide directive into parts, first part is <alias> and second is <def-value>
-    const parts = this.#divideDirective(data, 2);
+    const parts = this._divideDirective(data, 2);
     const alias = parts[0];
     const defValue = parts[1];
     // verify that alais is present
@@ -147,28 +147,28 @@ export class Tokenizer {
         "You should pass alias after '%PARAM' directive, structure of PARAM directive: %PARAM <alias>"
       );
     // remove wrapping escape char if present
-    const handledAlias = this.#removeEscChar(alias);
-    const handledDefValue = defValue && this.#removeEscChar(defValue);
+    const handledAlias = this._removeEscChar(alias);
+    const handledDefValue = defValue && this._removeEscChar(defValue);
     // return parts
     return { alias: handledAlias, defValue: handledDefValue };
   }
 
   /** Method to handle filename directive deviding into it's structure parts. */
-  #handleDirFilename(dir: string): FilenameDirParts {
+  private _handleDirFilename(dir: string): FilenameDirParts {
     // remove statring %FILENAME and trim
     const data = dir.replace("%FILENAME", "").trim();
     // remove wrapping escape char if present
-    const handledMetadata = data && this.#removeEscChar(data);
+    const handledMetadata = data && this._removeEscChar(data);
     // the filename is composed of only the <filename> so return directly
     return { metadata: handledMetadata };
   }
 
   /** Method to handle import directive deviding into it's structure parts. */
-  #handleDirImport(dir: string): ImportDirParts {
+  private _handleDirImport(dir: string): ImportDirParts {
     // remove statring %IMPORT and trim
     const data = dir.replace("%IMPORT", "").trim();
     // divide directive into parts, first part is <alias> and second is <path> and last part is [key=value ...]
-    const parts = this.#divideDirective(data);
+    const parts = this._divideDirective(data);
     const alias = parts[0];
     const path = parts[1];
     const keyValueParts = parts.slice(2);
@@ -178,16 +178,16 @@ export class Tokenizer {
         "You should pass alias and path after '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...]"
       );
     // remove wrapping escape char if present
-    const handledAlias = this.#removeEscChar(alias);
-    const handledPath = this.#removeEscChar(path);
+    const handledAlias = this._removeEscChar(alias);
+    const handledPath = this._removeEscChar(path);
     // handle conversion of keyValue parts into an object
     const keyValue: Record<string, string> = {};
     if (keyValueParts)
       for (const keyVal of keyValueParts) {
-        const [key, value] = this.#divideKeyValue(keyVal);
+        const [key, value] = this._divideKeyValue(keyVal);
         // remove wrapping escape char if present
-        const handledKey = key && this.#removeEscChar(key);
-        const handledValue = value && this.#removeEscChar(value);
+        const handledKey = key && this._removeEscChar(key);
+        const handledValue = value && this._removeEscChar(value);
         // add to keyValue object
         keyValue[handledKey] = handledValue;
       }
@@ -199,11 +199,11 @@ export class Tokenizer {
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // Expression divide methods.
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  #handleExprThis(expr: string): ThisExprParts {
+  private _handleExprThis(expr: string): ThisExprParts {
     // only trim for now (as we want to get part with $this)
     const data = expr.trim();
     // divide expression into parts, first part is <nodepath> and second is [key-value ...]
-    const parts = this.#divideExpression(data, 2);
+    const parts = this._divideExpression(data, 2);
     const nodepathStr = parts[0]
       ?.replace("$this", "")
       ?.replace(START_WITH_DOT, "");
@@ -214,16 +214,16 @@ export class Tokenizer {
         "You should pass node path after '$this' expression, structure of this expression: $this.<node-path> [key=value ...]"
       );
     // handle division of nodepath string into parts
-    const nodepath = this.#divideNodepath(nodepathStr);
-    const handledNodepath = nodepath.map(this.#removeEscChar);
+    const nodepath = this._divideNodepath(nodepathStr);
+    const handledNodepath = nodepath.map(this._removeEscChar);
     // handle conversion of keyValue parts into an object
     const keyValue: Record<string, string> = {};
     if (keyValueParts)
       for (const keyVal of keyValueParts) {
-        const [key, value] = this.#divideKeyValue(keyVal);
+        const [key, value] = this._divideKeyValue(keyVal);
         // remove wrapping escape char if present
-        const handledKey = key && this.#removeEscChar(key);
-        const handledValue = value && this.#removeEscChar(value);
+        const handledKey = key && this._removeEscChar(key);
+        const handledValue = value && this._removeEscChar(value);
         // add to keyValue object
         keyValue[handledKey] = handledValue;
       }
@@ -231,26 +231,26 @@ export class Tokenizer {
     return { nodepath: handledNodepath, keyValue };
   }
 
-  #handleExprImport(expr: string): ImportExprParts {
+  private _handleExprImport(expr: string): ImportExprParts {
     // only trim for now (as we want to get part with $import)
     const data = expr.trim();
     // divide expression into parts, first part is <nodepath> and second is [key-value ...]
-    const parts = this.#divideExpression(data, 2);
+    const parts = this._divideExpression(data, 2);
     const nodepathStr = parts[0]
       ?.replace("$import", "")
       ?.replace(START_WITH_DOT, "");
     const keyValueParts = parts.slice(1);
     // handle division of nodepath string into parts
-    const nodepath = this.#divideNodepath(nodepathStr);
-    const handledNodepath = nodepath.map(this.#removeEscChar);
+    const nodepath = this._divideNodepath(nodepathStr);
+    const handledNodepath = nodepath.map(this._removeEscChar);
     // handle conversion of keyValue parts into an object
     const keyValue: Record<string, string> = {};
     if (keyValueParts)
       for (const keyVal of keyValueParts) {
-        const [key, value] = this.#divideKeyValue(keyVal);
+        const [key, value] = this._divideKeyValue(keyVal);
         // remove wrapping escape char if present
-        const handledKey = key && this.#removeEscChar(key);
-        const handledValue = value && this.#removeEscChar(value);
+        const handledKey = key && this._removeEscChar(key);
+        const handledValue = value && this._removeEscChar(value);
         // add to keyValue object
         keyValue[handledKey] = handledValue;
       }
@@ -258,31 +258,31 @@ export class Tokenizer {
     return { nodepath: handledNodepath, keyValue };
   }
 
-  #handleExprLocal(expr: string): LocalExprParts {
+  private _handleExprLocal(expr: string): LocalExprParts {
     // remove statring $local and trim, also remove dot if new string starts with a dot
     const data = expr.replace("$local", "").trim().replace(START_WITH_DOT, "");
     // get alias (first and only part)
-    const parts = this.#divideExpression(data, 1);
+    const parts = this._divideExpression(data, 1);
     const alias = parts[0];
     if (!alias)
       throw new WrapperYAMLException(
         "You should pass alias after '$local' expression, strcuture of local expression: $local.<alias>"
       );
-    const handledAlias = this.#removeEscChar(alias);
+    const handledAlias = this._removeEscChar(alias);
     return { alias: handledAlias };
   }
 
-  #handleExprParam(expr: string): ParamExprParts {
+  private _handleExprParam(expr: string): ParamExprParts {
     // remove statring $param and trim, also remove dot if new string starts with a dot
     const data = expr.replace("$param", "").trim().replace(START_WITH_DOT, "");
     // get alias (first and only part)
-    const parts = this.#divideExpression(data, 1);
+    const parts = this._divideExpression(data, 1);
     const alias = parts[0];
     if (!alias)
       throw new WrapperYAMLException(
         "You should pass alias after '$param' expression, structure of local expression: $local.<alias>"
       );
-    const handledAlias = this.#removeEscChar(alias);
+    const handledAlias = this._removeEscChar(alias);
     return { alias: handledAlias };
   }
 
@@ -295,19 +295,19 @@ export class Tokenizer {
    * @param maxParts - Max number of parts as different directives accept x number of parts.
    * @returns Array of divided parts.
    */
-  #divideDirective(dir: string, maxParts?: number): string[] {
-    const parts = this.#divideByDelimiter(dir, " ", maxParts);
+  private _divideDirective(dir: string, maxParts?: number): string[] {
+    const parts = this._divideByDelimiter(dir, " ", maxParts);
     return parts;
   }
 
-  #divideExpression(expr: string, maxParts?: number): string[] {
-    const parts = this.#divideByDelimiter(expr, " ", maxParts);
+  private _divideExpression(expr: string, maxParts?: number): string[] {
+    const parts = this._divideByDelimiter(expr, " ", maxParts);
     return parts;
   }
 
-  #divideNodepath(path: string | undefined): string[] {
+  private _divideNodepath(path: string | undefined): string[] {
     if (!path) return [];
-    const parts = this.#divideByDelimiter(path, ".");
+    const parts = this._divideByDelimiter(path, ".");
     return parts;
   }
 
@@ -316,8 +316,8 @@ export class Tokenizer {
    * @param keyValue - <key=value> string that will be divided.
    * @returns Entery of key and value.
    */
-  #divideKeyValue(keyValue: string): [string, string] {
-    const parts = this.#divideByDelimiter(keyValue, "=", 2);
+  private _divideKeyValue(keyValue: string): [string, string] {
+    const parts = this._divideByDelimiter(keyValue, "=", 2);
     return [parts[0], parts[1]];
   }
 
@@ -326,7 +326,7 @@ export class Tokenizer {
    * @param delimiter - Delimiter used to divide string.
    * @returns Function that accept single charachter and decide if it matches delimiter used or not.
    */
-  #getDelimiterFunc(delimiter: string): (ch: string) => boolean {
+  private _getDelimiterFunc(delimiter: string): (ch: string) => boolean {
     if (delimiter === " ") return (ch: string) => WHITE_SPACE.test(ch);
     else return (ch: string) => ch === delimiter;
   }
@@ -338,12 +338,12 @@ export class Tokenizer {
    * @param maxParts - Max parts before ommiting the remaining string.
    * @returns Array that holds divided parts.
    */
-  #divideByDelimiter(
+  private _divideByDelimiter(
     str: string,
     delimiter: string,
     maxParts?: number
   ): string[] {
-    const delimiterFunc = this.#getDelimiterFunc(delimiter);
+    const delimiterFunc = this._getDelimiterFunc(delimiter);
     const parts: string[] = [];
     const len: number = str.length;
     let start: number = 0;
@@ -355,7 +355,7 @@ export class Tokenizer {
       // if escape char skip until close
       if (ESCAPE_CHAR.test(cur) && (i === 0 || DELIMITERS.test(str[i - 1]))) {
         const closeChar = ESCAPE_CLOSE_MAP[cur];
-        const endIdx = this.#handleEscapeBlock(str, i, closeChar);
+        const endIdx = this._handleEscapeBlock(str, i, closeChar);
         i = endIdx;
         continue;
       }
@@ -363,7 +363,7 @@ export class Tokenizer {
       // if delimiter add to parts
       if (delimiterFunc(cur)) {
         const part = str.slice(start, i);
-        const handledPart = this.#removeEscBlackSlash(part);
+        const handledPart = this._removeEscBlackSlash(part);
         parts.push(handledPart);
         if (maxParts && parts.length === maxParts) return parts;
         i++;
@@ -377,14 +377,14 @@ export class Tokenizer {
 
     if (start < len) {
       const lastPart = str.slice(start);
-      const handledPart = this.#removeEscBlackSlash(lastPart);
+      const handledPart = this._removeEscBlackSlash(lastPart);
       parts.push(handledPart);
     }
 
     return parts;
   }
 
-  #removeEscChar(str: string) {
+  private _removeEscChar(str: string) {
     // if string is less that 2 return str directly
     if (str.length < 2) return str;
     // handle removal of leading and end escape char
@@ -394,7 +394,7 @@ export class Tokenizer {
     return str;
   }
 
-  #removeEscBlackSlash(str: string): string {
+  private _removeEscBlackSlash(str: string): string {
     // handle removal of escape "\"
     let out = "";
     let i = 0;
@@ -413,7 +413,7 @@ export class Tokenizer {
    * @param closeChar - Character that closes escape block.
    * @returns end index.
    */
-  #handleEscapeBlock(
+  private _handleEscapeBlock(
     str: string,
     startIndex: number,
     closeChar: string

@@ -5,10 +5,10 @@ import { type FSWatcher, type WatchEventType, watch } from "fs";
  */
 export class FileSystem {
   /** Array that holds paths of YAML files being handled */
-  #files: string[] = [];
+  private _files: string[] = [];
 
   /** Map that links each YAML file path with watcher that updates it. */
-  #watchers: Map<string, FSWatcher> = new Map();
+  private _watchers: Map<string, FSWatcher> = new Map();
 
   /**
    * Method to check if YAML file is being watched.
@@ -16,7 +16,7 @@ export class FileSystem {
    * @returns Boolean to indicate if YAML file is being watched.
    */
   hasFile(path: string) {
-    return this.#files.includes(path);
+    return this._files.includes(path);
   }
 
   /**
@@ -26,14 +26,14 @@ export class FileSystem {
    */
   addFile(path: string, callback: (eventType: WatchEventType) => void): void {
     // if already watched return
-    if (this.#files.includes(path)) return;
+    if (this._files.includes(path)) return;
 
     // create and add watcher to watcher's array
     const watcher = watch(path, callback);
-    this.#watchers.set(path, watcher);
+    this._watchers.set(path, watcher);
 
     // add file to files array
-    this.#files.push(path);
+    this._files.push(path);
   }
 
   /**
@@ -42,29 +42,29 @@ export class FileSystem {
    */
   deleteFile(path: string): void {
     // delete file from file's array
-    const idx = this.#files.indexOf(path);
-    if (idx !== -1) this.#files.splice(idx, 1);
+    const idx = this._files.indexOf(path);
+    if (idx !== -1) this._files.splice(idx, 1);
 
     // get watcher and delete it
-    const watcher = this.#watchers.get(path);
+    const watcher = this._watchers.get(path);
     if (!watcher) return;
     watcher.removeAllListeners();
     watcher.close();
-    this.#watchers.delete(path);
+    this._watchers.delete(path);
   }
 
   /** Files being watched. */
   get files() {
-    return this.#files;
+    return this._files;
   }
 
   /** Method to destroy class. */
   destroy() {
-    this.#files = null as unknown as string[];
-    for (const w of this.#watchers.values()) {
+    this._files = null as unknown as string[];
+    for (const w of this._watchers.values()) {
       w.removeAllListeners();
       w.close();
     }
-    this.#watchers = null as unknown as Map<string, FSWatcher>;
+    this._watchers = null as unknown as Map<string, FSWatcher>;
   }
 }

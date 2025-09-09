@@ -1,7 +1,7 @@
 import { readFileSync as readFileSyncFS, realpathSync } from "fs";
 import { readFile as readFileAsyncFS } from "fs/promises";
 import { resolve, relative, parse } from "path";
-import { WrapperYAMLException } from "../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../wrapperClasses/wrapperError.js";
 import { fileNameRegex } from "./load/regex.js";
 import { createHash, randomBytes } from "crypto";
 
@@ -22,59 +22,62 @@ export function resolvePath(targetPath: string, currentPath: string) {
 
 /**
  * Function to resolve paths by adding basepath (path of the current module) and path (path of the imported or read module) together making absolute path of them.
- * @param resPath - Resolved path from concatinating current file path with imported file path. works sync.
+ * @param resolvedPath - Resolved path from concatinating current file path with imported file path. works sync.
  * @param currentPath - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
-export function readFile(resPath: string, currentPath: string): string {
+export function readFile(resolvedPath: string, currentPath: string): string {
   const resCurrentPath = resolve(currentPath);
 
-  if (!isInsideSandBox(resPath, resCurrentPath))
+  if (!isInsideSandBox(resolvedPath, resCurrentPath))
     throw new WrapperYAMLException(
-      `Path used: ${resPath} is out of scope of base path: ${resCurrentPath}`
+      `Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`
     );
 
-  if (!isYamlFile(resPath))
+  if (!isYamlFile(resolvedPath))
     throw new WrapperYAMLException(`You can only load YAML files the loader.`);
 
-  return readFileSyncFS(resPath, { encoding: "utf8" });
+  return readFileSyncFS(resolvedPath, { encoding: "utf8" });
 }
 
 /**
  * Function to resolve paths by adding basepath (path of the current module) and path (path of the imported or read module) together making absolute path of them.
- * @param resPath - Resolved path from concatinating current file path with imported file path. works async.
+ * @param resolvedPath - Resolved path from concatinating current file path with imported file path. works async.
  * @param currentPath - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
 export async function readFileAsync(
-  resPath: string,
+  resolvedPath: string,
   currentPath: string
 ): Promise<string> {
   const resCurrentPath = resolve(currentPath);
 
-  if (!isInsideSandBox(resPath, resCurrentPath))
+  if (!isInsideSandBox(resolvedPath, resCurrentPath))
     throw new WrapperYAMLException(
-      `Path used: ${resPath} is out of scope of base path: ${resCurrentPath}`
+      `Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`
     );
 
-  if (!isYamlFile(resPath))
+  if (!isYamlFile(resolvedPath))
     throw new WrapperYAMLException(
-      `You can only load YAML files the loader. loaded file: ${resPath}`
+      `You can only load YAML files the loader. loaded file: ${resolvedPath}`
     );
 
-  return await readFileAsyncFS(resPath, { encoding: "utf8" });
+  return await readFileAsyncFS(resolvedPath, { encoding: "utf8" });
 }
 
 /**
  * Function to check if file reads are black boxed.
- * @param resPath - Resolved path from concatinating current file path with imported file path. works async.
+ * @param resolvedPath - Resolved path from concatinating current file path with imported file path. works async.
  * @param basePath - Base path passed in opts of load function. used to black box the file reads.
  * @returns Boolean that indicates if resolved path actually lives inside base path.
  */
-export function isInsideSandBox(resPath: string, basePath: string): boolean {
+export function isInsideSandBox(
+  resolvedPath: string,
+  basePath: string
+): boolean {
   // Resolve symlinks to avoid escaping via symlink tricks
   const realBase = realpathSync(basePath);
-  const realRes = realpathSync(resPath);
+  const realRes = realpathSync(resolvedPath);
 
   // Windows: different root/drive => definitely outside (compare case-insensitive)
   const baseRoot = parse(realBase).root.toLowerCase();
@@ -124,13 +127,13 @@ export function stableStringify(obj: any): string {
 }
 
 /**
- * Function to normalize then hash objects.
- * @param obj - Object that will be hashed.
- * @returns Stable hash of the object that will only change only if value or key inside object changed but not the order.
+ * Function to normalize and hash params object.
+ * @param params - Params object that will be hashed.
+ * @returns Stable hash of params object that will only change if value or key inside object changed.
  */
-export function hashObj(obj: Record<string, any>): string {
+export function hashParams(params: Record<string, string>): string {
   // stringify object
-  const strObj = stableStringify(obj);
+  const strObj = stableStringify(params);
   // hash and return
   return createHash("sha256").update(strObj).digest().toString("hex");
 }

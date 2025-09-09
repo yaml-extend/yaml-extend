@@ -1,6 +1,6 @@
-import { WrapperYAMLException } from "../../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../../wrapperClasses/wrapperError.js";
 import { Expression } from "./expressionsHandler.js";
-import { TagResolveInstance } from "../lazyLoadClasses/tagResolveItem.js";
+import { TagResolveInstance } from "../lazyLoadClasses/tagResolveInstance.js";
 import type {
   DirectivesObj,
   HandledLoadOpts,
@@ -8,7 +8,7 @@ import type {
   InternalLoad,
   InternalLoadAsync,
 } from "../../../types.js";
-import { BlueprintInstance } from "../lazyLoadClasses/blueprintItem.js";
+import { BlueprintInstance } from "../lazyLoadClasses/blueprintInstance.js";
 import { generateId, getClosingChar } from "../../helpers.js";
 import { tokenizer } from "../tokenizer.js";
 
@@ -20,10 +20,10 @@ export class ResolveHandler {
    * Cache that holds resolve data for each resolve execution. it's keyed by concatinating loadId and resolved path (or random id if resolved path not passed). so each cache is
    * unique.
    */
-  #resolveCache: ResolveCache = new Map();
+  private _resolveCache: ResolveCache = new Map();
 
   /** Class to handle interpolations resolving. */
-  #exprHandler: Expression;
+  private _exprHandler: Expression;
 
   /**
    * @param load - Reference to internalLoad function, so it can be used in $import interpolation. passed like this to avoid circular dependency.
@@ -31,10 +31,10 @@ export class ResolveHandler {
    */
   constructor(load: InternalLoad, loadAsync: InternalLoadAsync) {
     // create interpolation class to handle interpolations while resolving.
-    this.#exprHandler = new Expression(
-      this.#resolveCache,
-      this.#resolveUnknown.bind(this),
-      this.#resolveUnknownAsync.bind(this),
+    this._exprHandler = new Expression(
+      this._resolveCache,
+      this._resolveUnknown.bind(this),
+      this._resolveUnknownAsync.bind(this),
       load,
       loadAsync
     );
@@ -55,7 +55,7 @@ export class ResolveHandler {
     // if array generate similar array and all values go through emptyCopy method as well
     if (Array.isArray(rawLoad)) {
       // check if it's syntaxt [$val]
-      if (this.#exprHandler.isExprSequence(rawLoad))
+      if (this._exprHandler.isExprSequence(rawLoad))
         return new BlueprintInstance(rawLoad);
 
       // otherwise handle as normal array
@@ -70,7 +70,7 @@ export class ResolveHandler {
       const enteries = Object.entries(rawLoad);
 
       // check if it's syntaxt {$val}
-      if (this.#exprHandler.isExprMapping(enteries))
+      if (this._exprHandler.isExprMapping(enteries))
         return new BlueprintInstance(rawLoad);
 
       // otherwise handle as normal object
@@ -90,7 +90,7 @@ export class ResolveHandler {
    * @param path - Resolved path of the module.
    * @param blueprint - Blueprint of the module.
    * @param directivesObj - Directives object of the module.
-   * @param paramsVal - Params value passed with this load function execution.
+   * @param params - Params value passed with this load function execution.
    * @param loadId - Load id generated to this load function execution.
    * @param opts - Options passed with this load function execution.
    * @returns Final load after resolving the blueprint, what is returned to the user after load functions finishes.
@@ -99,7 +99,7 @@ export class ResolveHandler {
     path: string | undefined,
     blueprint: unknown,
     directivesObj: DirectivesObj,
-    paramsVal: Record<string, string>,
+    params: Record<string, string>,
     loadId: string,
     opts: HandledLoadOpts
   ): unknown {
@@ -107,11 +107,11 @@ export class ResolveHandler {
     const id = `${loadId}_${path ?? generateId()}`;
 
     // add execution cache data
-    this.#resolveCache.set(id, {
+    this._resolveCache.set(id, {
       path,
       ...directivesObj,
       blueprint,
-      paramsVal,
+      params,
       localsVal: [],
       opts,
     });
@@ -119,11 +119,11 @@ export class ResolveHandler {
     // start actual handling
     try {
       // resolve
-      const resolved = this.#resolveUnknown(blueprint, id, false);
+      const resolved = this._resolveUnknown(blueprint, id, false);
       // remove private and return value
-      return this.#filterPrivate(resolved, id);
+      return this._filterPrivate(resolved, id);
     } finally {
-      this.#resolveCache.delete(id);
+      this._resolveCache.delete(id);
     }
   }
 
@@ -132,7 +132,7 @@ export class ResolveHandler {
    * @param path - Resolved path of the module.
    * @param blueprint - Blueprint of the module.
    * @param directivesObj - Directives object of the module.
-   * @param paramsVal - Params value passed with this load function execution.
+   * @param params - Params value passed with this load function execution.
    * @param loadId - Load id generated to this load function execution.
    * @param opts - Options passed with this load function execution.
    * @returns Final load after resolving the blueprint, what is returned to the user after load functions finishes.
@@ -141,7 +141,7 @@ export class ResolveHandler {
     path: string | undefined,
     blueprint: unknown,
     directivesObj: DirectivesObj,
-    paramsVal: Record<string, string>,
+    params: Record<string, string>,
     loadId: string,
     opts: HandledLoadOpts
   ): Promise<unknown> {
@@ -149,11 +149,11 @@ export class ResolveHandler {
     const id = `${loadId}_${path ?? generateId()}`;
 
     // add execution cache data
-    this.#resolveCache.set(id, {
+    this._resolveCache.set(id, {
       path,
       ...directivesObj,
       blueprint,
-      paramsVal,
+      params,
       localsVal: [],
       opts,
     });
@@ -161,11 +161,11 @@ export class ResolveHandler {
     // start actual handling
     try {
       // resolve
-      const resolved = await this.#resolveUnknownAsync(blueprint, id, false);
+      const resolved = await this._resolveUnknownAsync(blueprint, id, false);
       // remove private and return value
-      return this.#filterPrivate(resolved, id);
+      return this._filterPrivate(resolved, id);
     } finally {
-      this.#resolveCache.delete(id);
+      this._resolveCache.delete(id);
     }
   }
 
@@ -173,14 +173,14 @@ export class ResolveHandler {
   // Helper methods.
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   /**
-   * Method to resolve unkown value types by checking type and using appropriate specific resolver function. it's also the place where blueprintItem is resolved. works sync.
+   * Method to resolve unkown value types by checking type and using appropriate specific resolver function. it's also the place where blueprintInstance is resolved. works sync.
    * @param val - Unknown value.
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @param anchored - Boolean to indicate if the resolving is anchored (reference value in the node tree) or just part of main resolve loop. it controls how blueprint item is resolved.
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the specific resolve function based on type.
    */
-  #resolveUnknown(
+  private _resolveUnknown(
     val: unknown,
     id: string,
     anchored: boolean,
@@ -205,27 +205,27 @@ export class ResolveHandler {
     // handle raw value resolve at the end
     try {
       // handle value according to its type
-      if (typeof rawVal === "string") return this.#resolveString(rawVal, id);
+      if (typeof rawVal === "string") return this._resolveString(rawVal, id);
       if (typeof rawVal !== "object" || rawVal == null) return rawVal;
       if (rawVal instanceof TagResolveInstance)
-        return this.#resolveTag(rawVal, id, anchored, path);
+        return this._resolveTag(rawVal, id, anchored, path);
       if (Array.isArray(rawVal))
-        return this.#resolveArray(rawVal, id, anchored, path);
-      return this.#resolveObject(rawVal, id, anchored, path);
+        return this._resolveArray(rawVal, id, anchored, path);
+      return this._resolveObject(rawVal, id, anchored, path);
     } finally {
       if (val instanceof BlueprintInstance) val.resolved = true;
     }
   }
 
   /**
-   * Method to resolve unkown value types by checking type and using appropriate specific resolver function. it's also the place where blueprintItem is resolved. works async.
+   * Method to resolve unkown value types by checking type and using appropriate specific resolver function. it's also the place where blueprintInstance is resolved. works async.
    * @param val - Unknown value.
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @param anchored - Boolean to indicate if the resolving is anchored (reference value in the node tree) or just part of main resolve loop. it controls how blueprint item is resolved.
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the specific resolve function based on type.
    */
-  async #resolveUnknownAsync(
+  private async _resolveUnknownAsync(
     val: unknown,
     id: string,
     anchored: boolean,
@@ -251,13 +251,13 @@ export class ResolveHandler {
     try {
       // handle value according to its type
       if (typeof rawVal === "string")
-        return await this.#resolveStringAsync(rawVal, id);
+        return await this._resolveStringAsync(rawVal, id);
       if (typeof rawVal !== "object" || rawVal === null) return rawVal;
       if (rawVal instanceof TagResolveInstance)
-        return await this.#resolveTagAsync(rawVal, id, anchored, path);
+        return await this._resolveTagAsync(rawVal, id, anchored, path);
       if (Array.isArray(rawVal))
-        return await this.#resolveArrayAsync(rawVal, id, anchored, path);
-      return await this.#resolveObjectAsync(rawVal, id, anchored, path);
+        return await this._resolveArrayAsync(rawVal, id, anchored, path);
+      return await this._resolveObjectAsync(rawVal, id, anchored, path);
     } finally {
       if (val instanceof BlueprintInstance) val.resolved = true;
     }
@@ -271,7 +271,7 @@ export class ResolveHandler {
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the resolved object (mapping in YAML).
    */
-  #resolveObject(
+  private _resolveObject(
     obj: object,
     id: string,
     anchored: boolean,
@@ -285,7 +285,7 @@ export class ResolveHandler {
     if (enteries.length === 0) return {};
 
     // check if it's syntaxt {$val}
-    const intMapping = this.#exprHandler.handleExprMapping(enteries, id);
+    const intMapping = this._exprHandler.handleExprMapping(enteries, id);
     if (intMapping) {
       if (
         typeof intMapping !== "object" ||
@@ -301,7 +301,7 @@ export class ResolveHandler {
     // loop enteries
     for (const [key, val] of enteries) {
       // prettier-ignore
-      const exprMapping = this.#exprHandler.handleNestedExprMapping(key, val, id);
+      const exprMapping = this._exprHandler.handleNestedExprMapping(key, val, id);
       if (exprMapping) {
         delete newObj[key];
         // prettier-ignore
@@ -310,7 +310,7 @@ export class ResolveHandler {
         for (const [key, val] of Object.entries(exprMapping)) newObj[key] = val;
         continue;
       }
-      newObj[key] = this.#resolveUnknown(val, id, anchored, path);
+      newObj[key] = this._resolveUnknown(val, id, anchored, path);
     }
 
     return newObj;
@@ -324,7 +324,7 @@ export class ResolveHandler {
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the resolved object (mapping in YAML).
    */
-  async #resolveObjectAsync(
+  private async _resolveObjectAsync(
     obj: object,
     id: string,
     anchored: boolean,
@@ -338,7 +338,7 @@ export class ResolveHandler {
     if (enteries.length === 0) return {};
 
     // check if it's syntaxt {$val}
-    const exprMapping = await this.#exprHandler.handleExprMappingAsync(
+    const exprMapping = await this._exprHandler.handleExprMappingAsync(
       enteries,
       id
     );
@@ -358,7 +358,7 @@ export class ResolveHandler {
     // loop enteries
     for (const [key, val] of enteries) {
       // prettier-ignore
-      const exprMapping = await this.#exprHandler.handleNestedExprMappingAsync(key, val, id);
+      const exprMapping = await this._exprHandler.handleNestedExprMappingAsync(key, val, id);
       if (exprMapping) {
         delete newObj[key];
         // prettier-ignore
@@ -367,7 +367,7 @@ export class ResolveHandler {
         for (const [key, val] of Object.entries(exprMapping)) newObj[key] = val;
         continue;
       }
-      newObj[key] = await this.#resolveUnknownAsync(val, id, anchored, path);
+      newObj[key] = await this._resolveUnknownAsync(val, id, anchored, path);
     }
 
     return newObj;
@@ -381,7 +381,7 @@ export class ResolveHandler {
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the resolved arrays (sequence in YAML).
    */
-  #resolveArray(
+  private _resolveArray(
     arr: any[],
     id: string,
     anchored: boolean,
@@ -391,13 +391,13 @@ export class ResolveHandler {
     const newArr = [...arr];
 
     // check if it's syntaxt [$val]
-    const intSequence = this.#exprHandler.handleExprSequence(newArr, id);
+    const intSequence = this._exprHandler.handleExprSequence(newArr, id);
     if (intSequence)
       return Array.isArray(intSequence) ? intSequence : [intSequence];
 
     // handle all the values in the array
     for (let i = 0; i < newArr.length; i++)
-      newArr[i] = this.#resolveUnknown(newArr[i], id, anchored, path);
+      newArr[i] = this._resolveUnknown(newArr[i], id, anchored, path);
 
     // return new array
     return newArr;
@@ -411,7 +411,7 @@ export class ResolveHandler {
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the resolved arrays (sequence in YAML).
    */
-  async #resolveArrayAsync(
+  private async _resolveArrayAsync(
     arr: any[],
     id: string,
     anchored: boolean,
@@ -421,7 +421,7 @@ export class ResolveHandler {
     const newArr = [...arr];
 
     // check if it's syntaxt [$val]
-    const exprSequence = await this.#exprHandler.handleExprSequenceAsync(
+    const exprSequence = await this._exprHandler.handleExprSequenceAsync(
       newArr,
       id
     );
@@ -430,7 +430,7 @@ export class ResolveHandler {
 
     // handle all the values in the array
     for (let i = 0; i < newArr.length; i++)
-      newArr[i] = await this.#resolveUnknownAsync(
+      newArr[i] = await this._resolveUnknownAsync(
         newArr[i],
         id,
         anchored,
@@ -447,9 +447,9 @@ export class ResolveHandler {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value of the resolved string (scalar in YAML).
    */
-  #resolveString(str: string, id: string): string {
+  private _resolveString(str: string, id: string): string {
     // check if it's syntaxt $val
-    const intScaler = this.#exprHandler.handleExprScalar(str, id);
+    const intScaler = this._exprHandler.handleExprScalar(str, id);
     if (intScaler) return intScaler;
 
     /** Var to hold out string. */
@@ -478,7 +478,7 @@ export class ResolveHandler {
             throw new WrapperYAMLException(
               `String interpolation used without closing '}' in: ${str}`
             );
-          const val = this.#exprHandler.resolve(str.slice(i, end + 1), id);
+          const val = this._exprHandler.resolve(str.slice(i, end + 1), id);
           const stringifiedVal =
             typeof val === "string" ? val : JSON.stringify(val);
           out += stringifiedVal;
@@ -502,9 +502,9 @@ export class ResolveHandler {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value of the resolved string (scalar in YAML).
    */
-  async #resolveStringAsync(str: string, id: string): Promise<string> {
+  private async _resolveStringAsync(str: string, id: string): Promise<string> {
     // check if it's syntaxt $val
-    const exprScaler = await this.#exprHandler.handleExprScalarAsync(str, id);
+    const exprScaler = await this._exprHandler.handleExprScalarAsync(str, id);
     if (exprScaler) return exprScaler;
 
     /** Var to hold out string. */
@@ -533,7 +533,7 @@ export class ResolveHandler {
             throw new WrapperYAMLException(
               `String interpolation used without closing '}' in: ${str}`
             );
-          const val = await this.#exprHandler.resolveAsync(
+          const val = await this._exprHandler.resolveAsync(
             str.slice(i, end + 1),
             id
           );
@@ -562,28 +562,28 @@ export class ResolveHandler {
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the resolved tag.
    */
-  #resolveTag(
+  private _resolveTag(
     resolveItem: TagResolveInstance,
     id: string,
     anchored: boolean,
     path?: string[]
   ): unknown {
     // handle data and params (data's type is unkown but params type is string)
-    const resolvedData = this.#resolveUnknown(
+    const resolvedData = this._resolveUnknown(
       resolveItem.data,
       id,
       anchored,
       path
     );
-    const resolvedParams =
-      resolveItem.params && this.#resolveString(resolveItem.params, id);
-
-    // save resolved values in the tag resolve instance
-    resolveItem.data = resolvedData;
-    resolveItem.params = resolvedParams;
+    const resolvedArg =
+      resolveItem.arg && this._resolveString(resolveItem.arg, id);
 
     // execute the constructor function
-    const value = resolveItem.resolve();
+    const value = resolveItem.resolve(
+      resolvedData,
+      resolveItem.type,
+      resolvedArg
+    );
     return value;
   }
 
@@ -595,29 +595,28 @@ export class ResolveHandler {
    * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
    * @returns Value of the resolved tag.
    */
-  async #resolveTagAsync(
+  private async _resolveTagAsync(
     resolveItem: TagResolveInstance,
     id: string,
     anchored: boolean,
     path?: string[]
   ): Promise<unknown> {
     // handle data and params (data's type is unkown but params type is string)
-    const resolvedData = await this.#resolveUnknownAsync(
+    const resolvedData = await this._resolveUnknownAsync(
       resolveItem.data,
       id,
       anchored,
       path
     );
-    const resolvedParams =
-      resolveItem.params &&
-      (await this.#resolveStringAsync(resolveItem.params, id));
-
-    // save resolved values in the tag resolve instance
-    resolveItem.data = resolvedData;
-    resolveItem.params = resolvedParams;
+    const resolvedArg =
+      resolveItem.arg && (await this._resolveStringAsync(resolveItem.arg, id));
 
     // execute the constructor function
-    const value = await resolveItem.resolveAsync();
+    const value = await resolveItem.resolveAsync(
+      resolvedData,
+      resolveItem.type,
+      resolvedArg
+    );
     return value;
   }
 
@@ -627,9 +626,9 @@ export class ResolveHandler {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Final value after removal or private items.
    */
-  #filterPrivate(resolve: unknown, id: string): unknown {
+  private _filterPrivate(resolve: unknown, id: string): unknown {
     // get private arr
-    const privateArr = this.#resolveCache.get(id)?.privateArr;
+    const privateArr = this._resolveCache.get(id)?.privateArr;
     if (!privateArr) return resolve;
 
     // loop through private array to handle each path
@@ -644,7 +643,7 @@ export class ResolveHandler {
         const p = path[i];
 
         // if it's not a record then path is not true and just console a warning
-        if (!this.#isRecord(node)) break;
+        if (!this._isRecord(node)) break;
 
         // in last iteraion delete the child based on the parent type
         if (path.length - 1 === i) {
@@ -685,7 +684,7 @@ export class ResolveHandler {
    * @param val - Value that will be checked.
    * @returns Boolean that indicates if value is a record or not.
    */
-  #isRecord(val: unknown): val is Record<string, unknown> {
+  private _isRecord(val: unknown): val is Record<string, unknown> {
     return typeof val === "object" && val !== null;
   }
 }

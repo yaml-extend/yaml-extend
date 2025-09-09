@@ -3,22 +3,22 @@
  */
 export class Debouncer<T> {
   /** Boolean that indicate if debounce is currently looping and executing functions. */
-  #isExecuting: boolean = false;
+  private _isExecuting: boolean = false;
 
   /** Time interval that will be used to debounce. */
-  #timeInterval: number = 200;
+  private _timeInterval: number = 200;
 
   /** Next function to execute. */
-  #nextFunc!: () => Promise<T> | T;
+  private _nextFunc!: () => Promise<T> | T;
 
   /** Array that hold resolvers of the promises awaiting. */
-  #promises: { res: (val: any) => any; rej: (err: any) => void }[] = [];
+  private _promises: { res: (val: any) => any; rej: (err: any) => void }[] = [];
 
   /**
    * @param timeInterval - Time interval that will be used to debounce.
    */
   constructor(timeInterval = 200) {
-    this.#timeInterval = timeInterval;
+    this._timeInterval = timeInterval;
   }
 
   /**
@@ -26,7 +26,7 @@ export class Debouncer<T> {
    * @param ms - New time interval in seconds.
    */
   setInterval(ms: number): void {
-    this.#timeInterval = ms;
+    this._timeInterval = ms;
   }
 
   /**
@@ -40,35 +40,47 @@ export class Debouncer<T> {
     }
 
     // reset function
-    this.#nextFunc = func;
+    this._nextFunc = func;
 
     // create promise and add it's resolvers to promises array
     const promise = new Promise<T>((res, rej) => {
-      this.#promises.push({ res, rej });
+      this._promises.push({ res, rej });
     });
 
     // start execution
-    this.#execute();
+    this._execute();
 
     // await promise
     return await promise;
   }
 
+  /** Method to destroy class. */
+  destroy() {
+    for (const { rej } of this._promises.values()) {
+      rej(`Class is destroyed`);
+    }
+    this._promises = null as unknown as {
+      res: (val: any) => any;
+      rej: (err: any) => void;
+    }[];
+    this._nextFunc = null as unknown as () => T | Promise<T>;
+  }
+
   /**
    * Main method for execution. it go into a loop that take nextFunction and execute it, while also resolving promises awaiting for next execution.
    */
-  async #execute(): Promise<void> {
+  private async _execute(): Promise<void> {
     // if executing return, if not start execution
-    if (this.#isExecuting) return;
-    this.#isExecuting = true;
+    if (this._isExecuting) return;
+    this._isExecuting = true;
 
-    while (this.#promises.length > 0) {
+    while (this._promises.length > 0) {
       // get next function
-      const func = this.#nextFunc;
+      const func = this._nextFunc;
 
       // get promises until now and reset array
-      const promises = this.#promises.slice();
-      this.#promises = [];
+      const promises = this._promises.slice();
+      this._promises = [];
 
       if (typeof func !== "function") {
         const err = new TypeError("No function to execute");
@@ -85,25 +97,13 @@ export class Debouncer<T> {
       }
 
       // wait debounce interval before processing next queued call
-      if (this.#promises.length > 0) {
-        await new Promise((r) => setTimeout(r, this.#timeInterval));
+      if (this._promises.length > 0) {
+        await new Promise((r) => setTimeout(r, this._timeInterval));
       }
     }
     // set executing to false
-    this.#isExecuting = false;
+    this._isExecuting = false;
     // if new promises appeared during debounce interval re execute
-    if (this.#promises.length > 0) this.#execute();
-  }
-
-  /** Method to destroy class. */
-  destroy() {
-    for (const { rej } of this.#promises.values()) {
-      rej(`Class is destroyed`);
-    }
-    this.#promises = null as unknown as {
-      res: (val: any) => any;
-      rej: (err: any) => void;
-    }[];
-    this.#nextFunc = null as unknown as () => T | Promise<T>;
+    if (this._promises.length > 0) this._execute();
   }
 }

@@ -1,7 +1,7 @@
-import { WrapperYAMLException } from "../../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../../wrapperClasses/wrapperError.js";
 import { Schema } from "../../../wrapperClasses/schema.js";
 import { Type } from "../../../wrapperClasses/type.js";
-import { TagResolveInstance } from "../lazyLoadClasses/tagResolveItem.js";
+import { TagResolveInstance } from "../lazyLoadClasses/tagResolveInstance.js";
 import { numChar } from "../../helpers.js";
 
 import {
@@ -61,13 +61,13 @@ export class TagsHandler {
       cache.push(tag);
 
       // handle tag name passed to generated types (removing starting "!" or resolving handle and prefix)
-      const fullTag = this.#handleTagName(tag, tagsMap);
+      const fullTag = this._handleTagName(tag, tagsMap);
 
       // run structure regex on the tag, if no match pass it to syntax error handler and continue
       const match = tag.match(tagsStrucRegex);
       if (!match) {
         // generate types of the three kinds for this tag
-        const synErrorTypes = this.#handleSyntaxErrorTag(fullTag);
+        const synErrorTypes = this._handleSyntaxErrorTag(fullTag);
         // pass them to types array
         types.push(...synErrorTypes);
         continue;
@@ -83,7 +83,7 @@ export class TagsHandler {
       );
       if (schemaTypes.length === 0) {
         // generate types of the three kinds for this tag
-        const missingTypes = this.#handleMissingType(fullTag, tagInSchema);
+        const missingTypes = this._handleMissingType(fullTag, tagInSchema);
         // pass them to types array
         types.push(...missingTypes);
         continue;
@@ -92,7 +92,7 @@ export class TagsHandler {
       // generate types
       for (const schemaType of schemaTypes) {
         // build new type
-        const newType = this.#buildType(fullTag, schemaType, params);
+        const newType = this._buildType(fullTag, schemaType, params);
         // add type to the schema
         types.push(newType);
       }
@@ -109,8 +109,11 @@ export class TagsHandler {
    * @param params - params string defined in tag.
    * @returns Type that will handle this tag and ready to be converted to js-yaml type.
    */
-  #buildType(tag: string, schemaType: Type, params: string | undefined): Type {
-    console.debug("tag: ", tag);
+  private _buildType(
+    tag: string,
+    schemaType: Type,
+    params: string | undefined
+  ): Type {
     return new Type(tag, {
       kind: schemaType.kind,
       construct: (d, t?, p?) => {
@@ -135,9 +138,9 @@ export class TagsHandler {
    * @param tagsMap - Map that holds tags's handles and prefixes defined in directive.
    * @returns Tag name ready that will be passed to dynamically generated types.
    */
-  #handleTagName(tag: string, tagsMap: Map<string, string>): string {
+  private _handleTagName(tag: string, tagsMap: Map<string, string>): string {
     // check if handle is preceeded by handle and handle prefix
-    if (this.#hasHandle(tag)) {
+    if (this._hasHandle(tag)) {
       // devide into parts
       const parts = tag.split("!").filter((v) => v);
       const handle = parts[0];
@@ -155,7 +158,7 @@ export class TagsHandler {
    * @param tag - Tag that will be checked.
    * @returns Boolean that indicates if tag is preceeded by handle.
    */
-  #hasHandle(tag: string): boolean {
+  private _hasHandle(tag: string): boolean {
     let num = 0;
     for (let i = 0; i < tag.length; i++) {
       if (tag[i] === "!") num++;
@@ -170,7 +173,7 @@ export class TagsHandler {
    * @param tagName - Name of the tag only without params (tagName).
    * @returns Types to handle missing type from schema, so if tag is read specific error message if thrown.
    */
-  #handleMissingType(tag: string, tagName: string): Type[] {
+  private _handleMissingType(tag: string, tagName: string): Type[] {
     // get error object
     const error = new WrapperYAMLException(`Unkown tag: ${tagName}`);
 
@@ -205,9 +208,9 @@ export class TagsHandler {
    * @param tag - Full tag (tagName + params).
    * @returns Types to handle invalid tag, so if tag is read specific error message if thrown.
    */
-  #handleSyntaxErrorTag(tag: string) {
+  private _handleSyntaxErrorTag(tag: string) {
     // get error message
-    const errorMessage = this.#getErrorMessage(tag);
+    const errorMessage = this._getErrorMessage(tag);
     // create error object
     const error = new WrapperYAMLException(errorMessage);
 
@@ -242,7 +245,7 @@ export class TagsHandler {
    * @param tag - Full tag (tagName + params).
    * @returns Specific error message describing error.
    */
-  #getErrorMessage(tag: string): string {
+  private _getErrorMessage(tag: string): string {
     // check if error due to invalid char
     const invCharMatch = tag.match(invalidTagCharRegex);
     if (invCharMatch)

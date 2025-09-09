@@ -1,4 +1,4 @@
-import { WrapperYAMLException } from "../../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../../wrapperClasses/wrapperError.js";
 import {
   ResolveCache,
   InternalLoad,
@@ -8,7 +8,7 @@ import {
   ImportExprParts,
   ThisExprParts,
 } from "../../../types.js";
-import { BlueprintInstance } from "../lazyLoadClasses/blueprintItem.js";
+import { BlueprintInstance } from "../lazyLoadClasses/blueprintInstance.js";
 import { ImportHandler } from "./import.js";
 import { tokenizer } from "../tokenizer.js";
 
@@ -20,10 +20,10 @@ const BUG_MESSAGE = `Error while resolving, contact us about this error as it's 
  */
 export class Expression {
   /** Reference to resolve cache of parent resolveHandler class. */
-  #resolveCache: ResolveCache;
+  private _resolveCache: ResolveCache;
 
   /** Reference to resolveUnknown method of parent resolveHandler class. */
-  #resolveUnknown: (
+  private _resolveUnknown: (
     val: unknown,
     id: string,
     anchored: boolean,
@@ -31,7 +31,7 @@ export class Expression {
   ) => unknown;
 
   /** Reference to resolveUnknownAsync method of parent resolveHandler class. */
-  #resolveUnknownAsync: (
+  private _resolveUnknownAsync: (
     val: unknown,
     id: string,
     anchored: boolean,
@@ -39,7 +39,7 @@ export class Expression {
   ) => unknown;
 
   /** Class to handle imports. */
-  #importHandler: ImportHandler;
+  private _importHandler: ImportHandler;
 
   /**
    * @param resolveCache - Reference to resolve cache of parent resolveHandler class.
@@ -65,10 +65,10 @@ export class Expression {
     load: InternalLoad,
     loadAsync: InternalLoadAsync
   ) {
-    this.#importHandler = new ImportHandler(load, loadAsync);
-    this.#resolveCache = resolveCache;
-    this.#resolveUnknown = resolveUnknown;
-    this.#resolveUnknownAsync = resolveUnknownAsync;
+    this._importHandler = new ImportHandler(load, loadAsync);
+    this._resolveCache = resolveCache;
+    this._resolveUnknown = resolveUnknown;
+    this._resolveUnknownAsync = resolveUnknownAsync;
   }
 
   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -81,7 +81,7 @@ export class Expression {
    * @returns Boolean that indicate if it's an expression or not.
    */
   isExprMapping(ent: [string, unknown][]): boolean {
-    return ent.length === 1 && this.#isIntNode(ent[0][0]) && ent[0][1] == null;
+    return ent.length === 1 && this._isIntNode(ent[0][0]) && ent[0][1] == null;
   }
 
   /**
@@ -91,7 +91,7 @@ export class Expression {
    * @returns Boolean that indicate if it's an expression or not.
    */
   isExprSequence(arr: unknown[]): boolean {
-    return arr.length === 1 && this.#isIntNode(arr[0]);
+    return arr.length === 1 && this._isIntNode(arr[0]);
   }
 
   /**
@@ -101,7 +101,7 @@ export class Expression {
    * @returns Boolean that indicate if it's an expression or not.
    */
   isExprScalar(str: string): boolean {
-    return this.#isIntNode(str);
+    return this._isIntNode(str);
   }
 
   /**
@@ -130,7 +130,7 @@ export class Expression {
     id: string
   ): unknown | undefined {
     if (val instanceof BlueprintInstance) val = val.rawValue;
-    if (this.#isIntNode(key) && val == null) {
+    if (this._isIntNode(key) && val == null) {
       const value = this.resolve(key, id);
       return value;
     }
@@ -145,7 +145,7 @@ export class Expression {
    */
   async handleNestedExprMappingAsync(key: string, val: unknown, id: string) {
     if (val instanceof BlueprintInstance) val = val.rawValue;
-    if (this.#isIntNode(key) && val == null) {
+    if (this._isIntNode(key) && val == null) {
       const value = await this.resolveAsync(key, id);
       return value;
     }
@@ -249,13 +249,13 @@ export class Expression {
     // handle expression according to base
     switch (type) {
       case "this":
-        return this.#handleThisExpr(parts as ThisExprParts, id);
+        return this._handleThisExpr(parts as ThisExprParts, id);
       case "import":
-        return this.#handleImpExpr(parts as ImportExprParts, id);
+        return this._handleImpExpr(parts as ImportExprParts, id);
       case "param":
-        return this.#handleParamExpr(parts as ParamExprParts, id);
+        return this._handleParamExpr(parts as ParamExprParts, id);
       case "local":
-        return this.#handleLocalExpr(parts as LocalExprParts, id);
+        return this._handleLocalExpr(parts as LocalExprParts, id);
     }
   }
 
@@ -281,13 +281,13 @@ export class Expression {
     // handle expression according to base
     switch (type) {
       case "this":
-        return await this.#handleThisExprAsync(parts as ThisExprParts, id);
+        return await this._handleThisExprAsync(parts as ThisExprParts, id);
       case "import":
-        return await this.#handleImpExprAsync(parts as ImportExprParts, id);
+        return await this._handleImpExprAsync(parts as ImportExprParts, id);
       case "param":
-        return this.#handleParamExpr(parts as ParamExprParts, id);
+        return this._handleParamExpr(parts as ParamExprParts, id);
       case "local":
-        return this.#handleLocalExpr(parts as LocalExprParts, id);
+        return this._handleLocalExpr(parts as LocalExprParts, id);
     }
   }
 
@@ -301,12 +301,12 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value from resolving the expression.
    */
-  #handleThisExpr(parts: ThisExprParts, id: string): unknown {
+  private _handleThisExpr(parts: ThisExprParts, id: string): unknown {
     // destrcture parts
     const { nodepath, keyValue: localsVal } = parts;
 
     // get cache
-    const cache = this.#resolveCache.get(id);
+    const cache = this._resolveCache.get(id);
     if (!cache) throw new WrapperYAMLException(BUG_MESSAGE);
 
     // get needed cache data
@@ -317,7 +317,7 @@ export class Expression {
 
     try {
       // read node and return value
-      return this.#traverseNodes(blueprint, nodepath, id);
+      return this._traverseNodes(blueprint, nodepath, id);
     } finally {
       // remove added localVals
       cache.localsVal.pop();
@@ -331,7 +331,7 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value from resolving the expression.
    */
-  async #handleThisExprAsync(
+  private async _handleThisExprAsync(
     parts: ThisExprParts,
     id: string
   ): Promise<unknown> {
@@ -339,7 +339,7 @@ export class Expression {
     const { nodepath, keyValue: localsVal } = parts;
 
     // get cache
-    const cache = this.#resolveCache.get(id);
+    const cache = this._resolveCache.get(id);
     if (!cache) throw new WrapperYAMLException(BUG_MESSAGE);
 
     // get needed cache data
@@ -349,7 +349,7 @@ export class Expression {
     cache.localsVal.push(localsVal);
     try {
       // read node and return value
-      return await this.#traverseNodesAsync(blueprint, nodepath, id);
+      return await this._traverseNodesAsync(blueprint, nodepath, id);
     } finally {
       // remove added localVals
       cache.localsVal.pop();
@@ -363,12 +363,12 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value from resolving the expression.
    */
-  #handleImpExpr(parts: ImportExprParts, id: string): unknown {
+  private _handleImpExpr(parts: ImportExprParts, id: string): unknown {
     // destrcture parts
-    const { nodepath: aliasWithPath, keyValue: paramsVal } = parts;
+    const { nodepath: aliasWithPath, keyValue: params } = parts;
 
     // get cache
-    const cache = this.#resolveCache.get(id);
+    const cache = this._resolveCache.get(id);
     if (!cache) throw new WrapperYAMLException(BUG_MESSAGE);
 
     // get needed cache data
@@ -390,13 +390,13 @@ export class Expression {
       throw new WrapperYAMLException(
         `Alias used in import expression: '${aliasWithPath}' is not defined in directives.`
       );
-    const { paramsVal: defParamsVal, path: targetPath } = impData;
+    const { params: defParamsVal, path: targetPath } = impData;
 
     // merge default with defined params
-    const finalParams = { ...defParamsVal, ...paramsVal };
+    const finalParams = { ...defParamsVal, ...params };
 
     // import file
-    const load = this.#importHandler.import(
+    const load = this._importHandler.import(
       path,
       targetPath,
       finalParams,
@@ -405,7 +405,7 @@ export class Expression {
     );
 
     // traverse load using nodepath and return value
-    return this.#traverseNodes(load, nodepath, id);
+    return this._traverseNodes(load, nodepath, id);
   }
 
   /**
@@ -415,15 +415,15 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value from resolving the expression.
    */
-  async #handleImpExprAsync(
+  private async _handleImpExprAsync(
     parts: ImportExprParts,
     id: string
   ): Promise<unknown> {
     // destrcture parts
-    const { nodepath: aliasWithPath, keyValue: paramsVal } = parts;
+    const { nodepath: aliasWithPath, keyValue: params } = parts;
 
     // get cache
-    const cache = this.#resolveCache.get(id);
+    const cache = this._resolveCache.get(id);
     if (!cache) throw new WrapperYAMLException(BUG_MESSAGE);
 
     // get needed cache data
@@ -445,13 +445,13 @@ export class Expression {
       throw new WrapperYAMLException(
         `Alias used in import expression: '${aliasWithPath}' is not defined in directives.`
       );
-    const { paramsVal: defParamsVal, path: targetPath } = impData;
+    const { params: defParamsVal, path: targetPath } = impData;
 
     // merge default with defined params
-    const finalParams = { ...defParamsVal, ...paramsVal };
+    const finalParams = { ...defParamsVal, ...params };
 
     // import file
-    const load = await this.#importHandler.importAsync(
+    const load = await this._importHandler.importAsync(
       path,
       targetPath,
       finalParams,
@@ -460,7 +460,7 @@ export class Expression {
     );
 
     // traverse load using nodepath and return value
-    return await this.#traverseNodesAsync(load, nodepath, id);
+    return await this._traverseNodesAsync(load, nodepath, id);
   }
 
   /**
@@ -470,16 +470,16 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value from resolving the expression.
    */
-  #handleParamExpr(parts: ParamExprParts, id: string): unknown {
+  private _handleParamExpr(parts: ParamExprParts, id: string): unknown {
     // destrcture parts
     const { alias } = parts;
 
     // get cache
-    const cache = this.#resolveCache.get(id);
+    const cache = this._resolveCache.get(id);
     if (!cache) throw new WrapperYAMLException(BUG_MESSAGE);
 
     // get needed cache data
-    const { paramsMap, paramsVal } = cache;
+    const { paramsMap, params } = cache;
 
     // check if alias is defined in directives using paramsMap, if yes get def param value
     if (!paramsMap.has(alias))
@@ -489,7 +489,7 @@ export class Expression {
     const defParam = paramsMap.get(alias);
 
     // if value is passed for this alias use it otherwise use default value
-    return paramsVal[alias] ?? defParam ?? null;
+    return params[alias] ?? defParam ?? null;
   }
 
   /**
@@ -499,12 +499,12 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value from resolving the expression.
    */
-  #handleLocalExpr(parts: LocalExprParts, id: string): unknown {
+  private _handleLocalExpr(parts: LocalExprParts, id: string): unknown {
     // destrcture parts
     const { alias } = parts;
 
     // get cache
-    const cache = this.#resolveCache.get(id);
+    const cache = this._resolveCache.get(id);
     if (!cache) throw new WrapperYAMLException(BUG_MESSAGE);
 
     // get needed cache data
@@ -537,14 +537,14 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value after traversal and retuning subnode.
    */
-  #traverseNodes(tree: unknown, path: string[], id: string): unknown {
+  private _traverseNodes(tree: unknown, path: string[], id: string): unknown {
     // start node from base of the tree
     let node = tree;
 
     // start traversing
     for (const p of path) {
       // if node is not record throw
-      if (!this.#isRecord(node) || node instanceof BlueprintInstance)
+      if (!this._isRecord(node) || node instanceof BlueprintInstance)
         throw new WrapperYAMLException(
           `Invalid path in expression: ${path.join(".")}`
         );
@@ -558,7 +558,7 @@ export class Expression {
       // only if node is an array then try matching using string value
       if (Array.isArray(node) && typeof p === "string") {
         // resolve array values to get strings from blueprint items
-        const resolved = this.#resolveUnknown(node, id, true, path);
+        const resolved = this._resolveUnknown(node, id, true, path);
         // if resolved is still an array check if item is present, if yes update node and continue
         if (Array.isArray(resolved)) {
           const idx = resolved.indexOf(p);
@@ -576,7 +576,7 @@ export class Expression {
     }
 
     // return node
-    return this.#resolveUnknown(node, id, true, path);
+    return this._resolveUnknown(node, id, true, path);
   }
 
   /**
@@ -586,7 +586,7 @@ export class Expression {
    * @param id - Unique id generated for this resolve executiion, used to access cache.
    * @returns Value after traversal and retuning subnode.
    */
-  async #traverseNodesAsync(
+  private async _traverseNodesAsync(
     tree: unknown,
     path: string[],
     id: string
@@ -597,7 +597,7 @@ export class Expression {
     // start traversing
     for (const p of path) {
       // if node is not record throw
-      if (!this.#isRecord(node) || node instanceof BlueprintInstance)
+      if (!this._isRecord(node) || node instanceof BlueprintInstance)
         throw new WrapperYAMLException(
           `Invalid path in expression: ${path.join(".")}.`
         );
@@ -611,7 +611,7 @@ export class Expression {
       // only if node is an array then try matching using string value
       if (Array.isArray(node) && typeof p === "string") {
         // resolve array values to get strings from blueprint items
-        const resolved = await this.#resolveUnknownAsync(node, id, true, path);
+        const resolved = await this._resolveUnknownAsync(node, id, true, path);
         // if resolved is still an array check if item is present, if yes update node and continue
         if (Array.isArray(resolved)) {
           const idx = resolved.indexOf(p);
@@ -629,7 +629,7 @@ export class Expression {
     }
 
     // return node
-    return await this.#resolveUnknownAsync(node, id, true, path);
+    return await this._resolveUnknownAsync(node, id, true, path);
   }
 
   /**
@@ -637,7 +637,7 @@ export class Expression {
    * @param val - Value that will be checked.
    * @returns Boolean that indicates if value is expression node or not.
    */
-  #isIntNode(val: unknown): boolean {
+  private _isIntNode(val: unknown): boolean {
     if (val instanceof BlueprintInstance) val = val.rawValue;
     if (typeof val !== "string") return false;
     (val as string) = val.trim();
@@ -649,7 +649,7 @@ export class Expression {
    * @param val - Value that will be checked.
    * @returns Boolean that indicates if value is a record or not.
    */
-  #isRecord(val: unknown): val is Record<string, unknown> {
+  private _isRecord(val: unknown): val is Record<string, unknown> {
     return typeof val === "object" && val !== null;
   }
 }

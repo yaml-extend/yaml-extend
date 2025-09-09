@@ -1,4 +1,4 @@
-import { WrapperYAMLException } from "../../../wrapperClasses/error.js";
+import { WrapperYAMLException } from "../../../wrapperClasses/wrapperError.js";
 import { dirEndRegex, pathRegex } from "../regex.js";
 import type {
   DirectivesObj,
@@ -33,7 +33,7 @@ export class DirectivesHandler {
     /** Map of aliases for imports and import data as path and modules params. */
     const importsMap: Map<
       string,
-      { path: string; paramsVal: Record<string, string> }
+      { path: string; params: Record<string, string> }
     > = new Map();
     let filename: string = "";
 
@@ -54,7 +54,7 @@ export class DirectivesHandler {
     // split directive part into lines
     const lines = parts[0]
       .split("\n")
-      .filter((l) => !this.#isEmptyLine(l))
+      .filter((l) => !this._isEmptyLine(l))
       .map((l) => l.trim());
 
     // loop through lines to handle wrapper lines
@@ -71,22 +71,22 @@ export class DirectivesHandler {
 
       switch (type) {
         case "TAG":
-          this.#handleTags(tagsMap, directiveParts as TagDirParts);
+          this._handleTags(tagsMap, directiveParts as TagDirParts);
           break;
         case "PARAM":
-          this.#handleParams(paramsMap, directiveParts as ParamDirParts);
+          this._handleParams(paramsMap, directiveParts as ParamDirParts);
           break;
         case "PRIVATE":
-          this.#handlePrivate(privateArr, directiveParts as PrivateDirParts);
+          this._handlePrivate(privateArr, directiveParts as PrivateDirParts);
           break;
         case "IMPORT":
-          this.#handleImports(importsMap, directiveParts as ImportDirParts);
+          this._handleImports(importsMap, directiveParts as ImportDirParts);
           break;
         case "LOCAL":
-          this.#handleLocals(localsMap, directiveParts as LocalDirParts);
+          this._handleLocals(localsMap, directiveParts as LocalDirParts);
           break;
         case "FILENAME":
-          filename = this.#handleFilename(directiveParts as FilenameDirParts);
+          filename = this._handleFilename(directiveParts as FilenameDirParts);
           break;
       }
     }
@@ -108,7 +108,7 @@ export class DirectivesHandler {
    * @param parts - Directive parts object with metadata filename.
    * @returns filename.
    */
-  #handleFilename(parts: FilenameDirParts): string {
+  private _handleFilename(parts: FilenameDirParts): string {
     return parts.metadata;
   }
 
@@ -117,7 +117,7 @@ export class DirectivesHandler {
    * @param privateArr - Reference to the array that holds private nodes and will be passed to directives object.
    * @param parts - Directive parts object with metadata being private nodes.
    */
-  #handlePrivate(privateArr: string[], parts: PrivateDirParts): void {
+  private _handlePrivate(privateArr: string[], parts: PrivateDirParts): void {
     const privateNodes = parts.arrMetadata;
     if (Array.isArray(privateNodes))
       for (const p of privateNodes) privateArr.push(p);
@@ -128,7 +128,7 @@ export class DirectivesHandler {
    * @param tagsMap - Reference to the map that holds tags's handles and prefixes and will be passed to directives object.
    * @param parts - Parts of the line.
    */
-  #handleTags(tagsMap: Map<string, string>, parts: TagDirParts): void {
+  private _handleTags(tagsMap: Map<string, string>, parts: TagDirParts): void {
     const { alias, metadata } = parts;
     tagsMap.set(alias, metadata);
   }
@@ -138,7 +138,10 @@ export class DirectivesHandler {
    * @param localsMap - Reference to the map that holds local's aliases and default values and will be passed to directives object.
    * @param parts - Parts of the line.
    */
-  #handleLocals(localsMap: Map<string, string>, parts: LocalDirParts): void {
+  private _handleLocals(
+    localsMap: Map<string, string>,
+    parts: LocalDirParts
+  ): void {
     // get alias and defValue from parts
     const { alias, defValue } = parts;
     // add the alias with default value to the paramsMap
@@ -150,7 +153,7 @@ export class DirectivesHandler {
    * @param paramsMap - Reference to the map that holds params's aliases and default values and will be passed to directives object.
    * @param parts - Parts of the line.
    */
-  #handleParams(paramsMap: Map<string, string>, parts: ParamDirParts) {
+  private _handleParams(paramsMap: Map<string, string>, parts: ParamDirParts) {
     // get alias and defValue from parts
     const { alias, defValue } = parts;
     // add the alias with default value to the paramsMap
@@ -163,15 +166,12 @@ export class DirectivesHandler {
    * @param importsMap - Reference to the map that holds imports's aliases and path with default params values and will be passed to directives object.
    * @param parts - Parts of the line.
    */
-  #handleImports(
-    importsMap: Map<
-      string,
-      { path: string; paramsVal: Record<string, string> }
-    >,
+  private _handleImports(
+    importsMap: Map<string, { path: string; params: Record<string, string> }>,
     parts: ImportDirParts
   ): void {
     // get alias and path and params key value from parts
-    const { alias, metadata: path, keyValue: paramsVal } = parts;
+    const { alias, metadata: path, keyValue: params } = parts;
     // verify path
     const isYamlPath = pathRegex.test(path);
     if (!isYamlPath)
@@ -179,7 +179,7 @@ export class DirectivesHandler {
         `This is not a valid YAML file path: ${path}.`
       );
     // add parts to the map
-    importsMap.set(alias, { path, paramsVal });
+    importsMap.set(alias, { path, params });
   }
 
   /**
@@ -187,7 +187,7 @@ export class DirectivesHandler {
    * @param str - string which will be checked.
    * @returns boolean that indicates if line is empty or not.
    */
-  #isEmptyLine(str: string): boolean {
+  private _isEmptyLine(str: string): boolean {
     return str.trim().length === 0;
   }
 }

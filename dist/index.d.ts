@@ -1,6 +1,3 @@
-import { YAMLException } from 'js-yaml';
-export { YAMLException } from 'js-yaml';
-
 /**
  * Error object when yaml-extend resolve error is thrown.
  */
@@ -32,10 +29,71 @@ declare class WrapperYAMLException extends Error {
 }
 
 /**
+ * Type to handle tags and custom data types in YAML.
+ */
+declare class Type {
+    /** YAML data type that will be handled by this Tag/Type. */
+    kind?: TypeConstructorOptions["kind"];
+    /**
+     * Runtime type guard used when parsing YAML to decide whether a raw node (scalar, mapping or sequence) should be treated as this custom type.
+     * Return true when the incoming data matches this type.
+     * @param data - Raw node's value.
+     * @returns Boolean to indicate if raw value should be handled using this type.
+     */
+    resolve?: TypeConstructorOptions["resolve"];
+    /**
+     * Function that will be executed on raw node to return custom type in the load.
+     * @param data - Raw node's value.
+     * @param type - Type of the tag.
+     * @param param - Param passed along with the tag which is single scalar value.
+     * @returns Value that will replace node's raw value in the load.
+     */
+    construct?: TypeConstructorOptions["construct"];
+    /**
+     * Used when dumping (serializing) JS objects to YAML. If a value is an instance of the provided constructor (or matches the object prototype),
+     * the dumper can choose this type to represent it.
+     */
+    instanceOf?: TypeConstructorOptions["instanceOf"];
+    /**
+     *  Alternative to instanceOf for dump-time detection. If predicate returns true for a JS value, the dumper can select this type to represent that object.
+     * Useful when instanceof is not possible (plain objects, duck-typing).
+     */
+    predicate?: TypeConstructorOptions["predicate"];
+    /**
+     * Controls how a JS value is converted into a YAML node when serializing (dumping). Return either a primitive, array or mapping representation suitable for YAML.
+     * When provided as an object, each property maps a style name to a function that produces the representation for that style.
+     */
+    represent?: TypeConstructorOptions["represent"];
+    /**
+     * When represent is given as a map of styles, representName chooses which style to use for a particular value at dump time. It should return the
+     * style key (e.g., "canonical" or "short").
+     */
+    representName?: TypeConstructorOptions["representName"];
+    /** The fallback style name to use when represent provides multiple styles and representName is not present (or does not return a valid style). */
+    defaultStyle?: TypeConstructorOptions["defaultStyle"];
+    /**
+     * Indicates whether this tag/type can be used for multiple YAML tags (i.e., it is not strictly tied to a single tag). This affects how the
+     * parser/dumper treats tag resolution and may allow more flexible matching.
+     */
+    multi?: TypeConstructorOptions["multi"];
+    /**
+     * Map alias style names to canonical style identifiers. This lets users refer to styles by alternate names; the dumper normalizes them to the canonical style
+     * before selecting a represent function.
+     */
+    styleAliases?: TypeConstructorOptions["styleAliases"];
+    /**
+     * @param tag - Tag that will be used in YAML text.
+     * @param opts - Configirations and options that defines how tag handle data.
+     */
+    constructor(tag: string, opts?: TypeConstructorOptions);
+    /** Read only, Tag name of the type. */
+    get tag(): string;
+}
+
+/**
  * Schema that holds Types used for loading and dumping YAML string.
  */
 declare class Schema {
-    #private;
     /**
      * @param definition - Either schema definition or types that will control how parser handle tags in YAML.
      * @param group - Optional built-in schema to use.
@@ -48,6 +106,56 @@ declare class Schema {
     extend(types: SchemaDefinition | Type[] | Type): Schema;
     get types(): Type[];
     get group(): "FAILSAFE" | "JSON" | "CORE" | "DEFAULT" | undefined;
+}
+
+/**
+ * Class that replace and store primitives, expression strings or TagResolveInstances in raw-load from js-yaml which enable lazy resolving based on different $param or %local values.
+ * It also record resolve state to insure left-to-right evaluation order.
+ */
+declare class BlueprintInstance {
+    /** Boolean, initially false. Set to true after the instance is fully resolved. */
+    resolved: boolean;
+    /**
+     * @param rawValue - The original raw value from js-yaml (primitive, expression string or TagResolveInstance).
+     */
+    constructor(rawValue: unknown);
+    /** Read only, The original raw value from js-yaml (primitive, expression string or TagResolveInstance). */
+    get rawValue(): unknown;
+}
+
+/**
+ * Class returned from user-defined type's contruct functions. stores data, type and arg passed to the function, so they can be resolved first.
+ */
+declare class TagResolveInstance {
+    /**
+     * @param func - Constructor function used by the tag.
+     * @param data - Data passed to the tag.
+     * @param type - Type passed to the tag.
+     * @param arg - Argument string passed to the tag.
+     */
+    constructor(func: (data: any, type?: string, arg?: string) => unknown | Promise<unknown>, data: any, type: string | undefined, arg: string | undefined);
+    /**
+     * Method to execute the constructor function and get value from the tag. works sync.
+     * @param data - Data passed to the tag.
+     * @param type - Type passed to the tag.
+     * @param arg - Argument string passed to the tag.
+     * @retunrs Value from construct function exectution on resolved data.
+     */
+    resolve(data: any, type?: string, arg?: string): unknown;
+    /**
+     * Method to execute the constructor function and get value from the tag. works async.
+     * @param data - Data passed to the tag.
+     * @param type - Type passed to the tag.
+     * @param arg - Argument string passed to the tag.
+     * @retunrs Value from construct function exectution on resolved data.
+     */
+    resolveAsync(data: any, type?: string, arg?: string): Promise<unknown>;
+    /** Read only, Data passed to the tag. */
+    get data(): any;
+    /** Read only, Type passed to the tag. */
+    get type(): string | undefined;
+    /** Read only, Argument passed to the tag. */
+    get arg(): string | undefined;
 }
 
 /**
@@ -89,7 +197,6 @@ declare function resolveAsync(str: string, opts?: ResolveOptions): Promise<strin
  * Class that handles loading multiple YAML files at the same time while watching loaded files and update there loads as files change.
  */
 declare class LiveLoader {
-    #private;
     /**
      * @param opts - Options object passed to control live loader behavior.
      */
@@ -104,26 +211,26 @@ declare class LiveLoader {
      * imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled
      * as sync functions and will not be awaited.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param paramsVal - Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
+     * @param params - Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
      * @returns Value of loaded YAML file.
      */
-    addModule(path: string, paramsVal?: Record<string, string>): unknown;
+    addModule(path: string, params?: Record<string, string>): unknown;
     /**
      * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported
      * YAML files in the read YAML string are watched as well. works async so all file watch, reads are async and tags executions will be awaited.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param paramsVal - Object of module params aliases and there values to be used in this load.
+     * @param params - Object of module params aliases and there values to be used in this load.
      * @returns Value of loaded YAML file.
      */
-    addModuleAsync(path: string, paramsVal?: Record<string, string>): Promise<unknown>;
+    addModuleAsync(path: string, params?: Record<string, string>): Promise<unknown>;
     /**
-     * Method to get cached value of loaded module or file. note that value retuned is module's resolve when paramsVal is undefined (default params value are used).
+     * Method to get cached value of loaded module or file. note that value retuned is module's resolve when params is undefined (default params value are used).
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
      * @returns Cached value of YAML file with default modules params or undefined if file is not loaded.
      */
     getModule(path: string): unknown | undefined;
     /**
-     * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when paramsVal is undefined (default params value are used).
+     * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when params is undefined (default params value are used).
      * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
      */
     getAllModules(): Record<string, unknown>;
@@ -153,44 +260,52 @@ declare class LiveLoader {
     destroy(): void;
 }
 
-/** Object the holds directives data. */
+/** Object the holds directives data for YAML file. */
 type DirectivesObj = {
-    /** Array of node paths that are defined to be private in YAML directive. */
-    privateArr: string[];
-    /** Map of <handle> <prefix> for tags defined in YAML directive. */
+    /** Logical filename as declared by the %FILENAME YAML directive. */
+    filename: string | undefined;
+    /** Map of handle → prefix (URI) as declared by the %TAG YAML directive. */
     tagsMap: Map<string, string>;
-    /** Map of <alias> <defualt value> for the params defined in YAML directive. */
+    /** Array of node paths declared private via the %PRIVATE YAML directive. */
+    privateArr: string[];
+    /** Map of alias → default value as declared by the %PARAM YAML directive. */
     paramsMap: Map<string, string>;
-    /** Map of <alias> <defualt value> for the locals defined in YAML directive. */
+    /** Map of alias → default value as declared by the %LOCAL YAML directive. */
     localsMap: Map<string, string>;
-    /** Map of <alias> <path> <params value> for the imports defined in YAML directive. */
+    /** Map of alias → {path, params} as declared by the %PRIVATE YAML directive. */
     importsMap: Map<string, {
         path: string;
-        paramsVal: Record<string, string>;
+        params: Record<string, string>;
     }>;
-    /** Logical filename if supplied in the directives. */
-    filename: string | undefined;
 };
-/** Cache to hold resolved load using specific module params value for specific YAML module. */
-type ParamsCache = {
-    /** Params used to load module. */
-    paramsVal: Record<string, string> | undefined;
-    /** Final load after parsing YAML text. */
+/**
+ * Entry representing a resolved module load for a specific set of params.
+ * Keyed in the parent cache by a hash computed from `params`.
+ */
+type ParamLoadEntry = {
+    /** Parameter values used to produce this load (may be undefined). */
+    params?: Record<string, string>;
+    /** Final resolved value returned after parsing/loading the YAML module. */
     load: unknown;
 };
-/** Cache to hold data for single YAML module. */
+/**
+ * Cache that stores all resolved loads and metadata for a single YAML module.
+ */
 type ModuleLoadCache = {
-    /** Map of params hash as a key and load with params used as value. */
-    loadCache: Map<string, ParamsCache>;
-    /** Object that holds data of directives. */
-    dirObj: DirectivesObj;
-    /** Resolved path of the module. */
-    resPath: string;
-    /** String passed from load(). */
-    str: string;
-    /** Hash of the string passed to load(). */
-    hashedStr: string;
-    /** Blueprint of the YAML text used to generate loads. */
+    /**
+     * Map from params-hash → ParamLoadEntry.
+     * Use the hash of the params (string) as the map key so different param sets map to their respective resolved load results.
+     */
+    loadByParamHash: Map<string, ParamLoadEntry>;
+    /** Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). */
+    directives: DirectivesObj;
+    /** Absolute or resolved filesystem path of the module. */
+    resolvedPath: string;
+    /** Original string provided to `load()` for this module. */
+    source: string;
+    /** Hash computed from `source` (used to detect changes / cache misses). */
+    sourceHash: string;
+    /** Canonical "blueprint" produced from the YAML text used to generate loads. */
     blueprint: unknown;
 };
 /** Options object passed to control load behavior. */
@@ -207,8 +322,8 @@ interface LoadOptions {
      * set this to the resolved absolute path automatically. `Note that imports and caching will not work if filepath is not supplied here or in function's str field.`
      */
     filepath?: string | undefined;
-    /** Mapping of module param aliases to string values that will be used to resolve %PARAM declarations in the module. Loader-supplied paramsVal should override any defaults declared with %PARAM. */
-    paramsVal?: Record<string, string> | undefined;
+    /** Mapping of module param aliases to string values that will be used to resolve %PARAM declarations in the module. Loader-supplied params should override any defaults declared with %PARAM. */
+    params?: Record<string, string> | undefined;
     /** String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used. */
     filename?: string | undefined;
     /** Function to call on warning messages. */
@@ -262,7 +377,7 @@ type ResolveOptions = LoadOptions & DumpOptions & {
     outputPath?: string;
 };
 /** Options object passed to control liveLoader behavior. */
-type LiveLoaderOptions = Omit<LoadOptions, "filename" | "filepath" | "paramsVal"> & {
+type LiveLoaderOptions = Omit<LoadOptions, "filename" | "filepath" | "params"> & {
     /**
      * Function to call when a watcher detect file change.
      * @param eventType - Type of the file change event. either "change" or "rename".
@@ -388,6 +503,23 @@ interface State {
     implicitTypes: Type[];
 }
 /**
+ * Mark for YAMLException that defines error's details.
+ */
+interface Mark {
+    /** The original input text (or the relevant buffer slice) used to produce the error. */
+    buffer: string;
+    /** Zero-based column number (character offset from lineStart) where the error occurred. */
+    column: number;
+    /** Zero-based line number where the problem was detected. */
+    line: number;
+    /** The logical name for YAML string (filename). */
+    name: string;
+    /** Absolute character index in `buffer` for the error location. */
+    position: number;
+    /** short excerpt from the input surrounding the error. */
+    snippet: string;
+}
+/**
  * Kind or type of YAML data.
  */
 type Kind = "sequence" | "scalar" | "mapping";
@@ -399,67 +531,30 @@ type ParseEventType = "open" | "close";
  * Types of file system event.
  */
 type FileEventType = "change" | "rename";
-
 /**
- * Type to handle tags and custom data types in YAML.
+ * Built-in schemas by js-yaml.
  */
-declare class Type {
-    #private;
-    /** YAML data type that will be handled by this Tag/Type. */
-    kind?: TypeConstructorOptions["kind"];
+type Group = "FAILSAFE" | "JSON" | "CORE" | "DEFAULT";
+
+/** Error object when `js-yaml` parse error it thrown. */
+declare class YAMLException extends Error {
+    /** Logical name of the YAML string where error is thrown. */
+    name: string;
+    /** Reason of the error. */
+    reason?: string;
+    /** Mark for YAMLException that defines error's details. */
+    mark?: any;
     /**
-     * Runtime type guard used when parsing YAML to decide whether a raw node (scalar, mapping or sequence) should be treated as this custom type.
-     * Return true when the incoming data matches this type.
-     * @param data - Raw node's value.
-     * @returns Boolean to indicate if raw value should be handled using this type.
+     * @param reason - Reason of the error.
+     * @param mark - Mark for YAMLException that defines error's details.
      */
-    resolve?: TypeConstructorOptions["resolve"];
+    constructor(reason?: string, mark?: Mark);
     /**
-     * Function that will be executed on raw node to return custom type in the load.
-     * @param data - Raw node's value.
-     * @param type - Type of the tag.
-     * @param param - Param passed along with the tag which is single scalar value.
-     * @returns Value that will replace node's raw value in the load.
+     * Method to convert Error object into string.
+     * @param compact - Boolean to indicated if output error string should be compacted.
+     * @returns Stringified error.
      */
-    construct?: TypeConstructorOptions["construct"];
-    /**
-     * Used when dumping (serializing) JS objects to YAML. If a value is an instance of the provided constructor (or matches the object prototype),
-     * the dumper can choose this type to represent it.
-     */
-    instanceOf?: TypeConstructorOptions["instanceOf"];
-    /**
-     *  Alternative to instanceOf for dump-time detection. If predicate returns true for a JS value, the dumper can select this type to represent that object.
-     * Useful when instanceof is not possible (plain objects, duck-typing).
-     */
-    predicate?: TypeConstructorOptions["predicate"];
-    /**
-     * Controls how a JS value is converted into a YAML node when serializing (dumping). Return either a primitive, array or mapping representation suitable for YAML.
-     * When provided as an object, each property maps a style name to a function that produces the representation for that style.
-     */
-    represent?: TypeConstructorOptions["represent"];
-    /**
-     * When represent is given as a map of styles, representName chooses which style to use for a particular value at dump time. It should return the
-     * style key (e.g., "canonical" or "short").
-     */
-    representName?: TypeConstructorOptions["representName"];
-    /** The fallback style name to use when represent provides multiple styles and representName is not present (or does not return a valid style). */
-    defaultStyle?: TypeConstructorOptions["defaultStyle"];
-    /**
-     * Indicates whether this tag/type can be used for multiple YAML tags (i.e., it is not strictly tied to a single tag). This affects how the
-     * parser/dumper treats tag resolution and may allow more flexible matching.
-     */
-    multi?: TypeConstructorOptions["multi"];
-    /**
-     * Map alias style names to canonical style identifiers. This lets users refer to styles by alternate names; the dumper normalizes them to the canonical style
-     * before selecting a represent function.
-     */
-    styleAliases?: TypeConstructorOptions["styleAliases"];
-    /**
-     * @param tag - Tag that will be used in YAML text.
-     * @param opts - Configirations and options that defines how tag handle data.
-     */
-    constructor(tag: string, opts?: TypeConstructorOptions);
-    get tag(): string;
+    toString(compact?: boolean): string;
 }
 
 /** only strings, arrays and plain objects: http://www.yaml.org/spec/1.2/spec.html#id2802346 */
@@ -479,4 +574,12 @@ declare const DEFAULT_SCHEMA: Schema;
  */
 declare function dump(obj: any, opts?: DumpOptions | undefined): string;
 
-export { CORE_SCHEMA, DEFAULT_SCHEMA, FAILSAFE_SCHEMA, JSON_SCHEMA, LiveLoader, Schema, Type, WrapperYAMLException, dump, load, loadAsync, resolve, resolveAsync };
+/**
+ * Function to normalize and hash params object.
+ * @param params - Params object that will be hashed.
+ * @returns Stable hash of params object that will only change if value or key inside object changed.
+ */
+declare function hashParams(params: Record<string, string>): string;
+
+export { BlueprintInstance, CORE_SCHEMA, DEFAULT_SCHEMA, FAILSAFE_SCHEMA, JSON_SCHEMA, LiveLoader, Schema, TagResolveInstance, Type, WrapperYAMLException, YAMLException, dump, hashParams, load, loadAsync, resolve, resolveAsync };
+export type { DirectivesObj, DumpOptions, FileEventType, Group, Kind, LiveLoaderOptions, LoadOptions, Mark, ModuleLoadCache, ParamLoadEntry, ParseEventType, ResolveOptions, SchemaDefinition, State, TypeConstructorOptions };

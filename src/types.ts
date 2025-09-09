@@ -1,7 +1,9 @@
 import type { Type } from "./wrapperClasses/type.js";
 import type { Schema } from "./wrapperClasses/schema.js";
-import type { WrapperYAMLException } from "./wrapperClasses/error.js";
-import type { YAMLException } from "js-yaml";
+import type { WrapperYAMLException } from "./wrapperClasses/wrapperError.js";
+import type { YAMLException } from "./wrapperClasses/error.js";
+import type { BlueprintInstance } from "./core/load/lazyLoadClasses/blueprintInstance.js";
+import type { TagResolveInstance } from "./core/load/lazyLoadClasses/tagResolveInstance.js";
 import type {
   Load,
   LoadAsync,
@@ -17,6 +19,8 @@ export {
   Schema,
   WrapperYAMLException,
   YAMLException,
+  BlueprintInstance,
+  TagResolveInstance,
   Load,
   LoadAsync,
   InternalLoad,
@@ -46,20 +50,20 @@ export let DEFAULT_SCHEMA: Schema;
 //
 
 // directives types
-/** Object the holds directives data. */
+/** Object the holds directives data for YAML file. */
 export type DirectivesObj = {
-  /** Array of node paths that are defined to be private in YAML directive. */
-  privateArr: string[];
-  /** Map of <handle> <prefix> for tags defined in YAML directive. */
-  tagsMap: Map<string, string>;
-  /** Map of <alias> <defualt value> for the params defined in YAML directive. */
-  paramsMap: Map<string, string>;
-  /** Map of <alias> <defualt value> for the locals defined in YAML directive. */
-  localsMap: Map<string, string>;
-  /** Map of <alias> <path> <params value> for the imports defined in YAML directive. */
-  importsMap: Map<string, { path: string; paramsVal: Record<string, string> }>;
-  /** Logical filename if supplied in the directives. */
+  /** Logical filename as declared by the %FILENAME YAML directive. */
   filename: string | undefined;
+  /** Map of handle → prefix (URI) as declared by the %TAG YAML directive. */
+  tagsMap: Map<string, string>;
+  /** Array of node paths declared private via the %PRIVATE YAML directive. */
+  privateArr: string[];
+  /** Map of alias → default value as declared by the %PARAM YAML directive. */
+  paramsMap: Map<string, string>;
+  /** Map of alias → default value as declared by the %LOCAL YAML directive. */
+  localsMap: Map<string, string>;
+  /** Map of alias → {path, params} as declared by the %PRIVATE YAML directive. */
+  importsMap: Map<string, { path: string; params: Record<string, string> }>;
 };
 
 /** List of directives handled by lib. */
@@ -147,33 +151,42 @@ export type LocalExprParts = Pick<ExpressionPartsObj, "alias">;
 //
 
 // cache types
-/** Cache to hold resolved load using specific module params value for specific YAML module. */
-export type ParamsCache = {
-  /** Params used to load module. */
-  paramsVal: Record<string, string> | undefined;
 
-  /** Final load after parsing YAML text. */
+/**
+ * Entry representing a resolved module load for a specific set of params.
+ * Keyed in the parent cache by a hash computed from `params`.
+ */
+export type ParamLoadEntry = {
+  /** Parameter values used to produce this load (may be undefined). */
+  params?: Record<string, string>;
+
+  /** Final resolved value returned after parsing/loading the YAML module. */
   load: unknown;
 };
 
-/** Cache to hold data for single YAML module. */
+/**
+ * Cache that stores all resolved loads and metadata for a single YAML module.
+ */
 export type ModuleLoadCache = {
-  /** Map of params hash as a key and load with params used as value. */
-  loadCache: Map<string, ParamsCache>;
+  /**
+   * Map from params-hash → ParamLoadEntry.
+   * Use the hash of the params (string) as the map key so different param sets map to their respective resolved load results.
+   */
+  loadByParamHash: Map<string, ParamLoadEntry>;
 
-  /** Object that holds data of directives. */
-  dirObj: DirectivesObj;
+  /** Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). */
+  directives: DirectivesObj;
 
-  /** Resolved path of the module. */
-  resPath: string;
+  /** Absolute or resolved filesystem path of the module. */
+  resolvedPath: string;
 
-  /** String passed from load(). */
-  str: string;
+  /** Original string provided to `load()` for this module. */
+  source: string;
 
-  /** Hash of the string passed to load(). */
-  hashedStr: string;
+  /** Hash computed from `source` (used to detect changes / cache misses). */
+  sourceHash: string;
 
-  /** Blueprint of the YAML text used to generate loads. */
+  /** Canonical "blueprint" produced from the YAML text used to generate loads. */
   blueprint: unknown;
 };
 
@@ -198,7 +211,7 @@ export type ModuleResolveCache = DirectivesObj & {
   blueprint: unknown;
 
   /** Params value passed along with load(). along with paramsMap's defualt values they are used to resolve params defined in module. */
-  paramsVal: Record<string, string>;
+  params: Record<string, string>;
 
   /**
    * Locals value defined after $this interpolation. along with localsMap's defualt values they are used to resolve locals defined in module.
@@ -239,8 +252,8 @@ export interface LoadOptions {
    */
   filepath?: string | undefined;
 
-  /** Mapping of module param aliases to string values that will be used to resolve %PARAM declarations in the module. Loader-supplied paramsVal should override any defaults declared with %PARAM. */
-  paramsVal?: Record<string, string> | undefined;
+  /** Mapping of module param aliases to string values that will be used to resolve %PARAM declarations in the module. Loader-supplied params should override any defaults declared with %PARAM. */
+  params?: Record<string, string> | undefined;
 
   /** String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used. */
   filename?: string | undefined;
@@ -258,12 +271,12 @@ export interface LoadOptions {
   listener?(this: State, eventType: ParseEventType, state: State): void;
 }
 
-/** Internal, LoadOptions after being handled in load/loadAsync. basePath and paramsVal are not optional. */
+/** Internal, LoadOptions after being handled in load/loadAsync. basePath and params are not optional. */
 export type HandledLoadOpts = {
   basePath: string;
   unsafe?: boolean | undefined;
   filepath?: string | undefined;
-  paramsVal: Record<string, string>;
+  params: Record<string, string>;
   filename?: string | undefined;
   onWarning?(this: null, e: YAMLException | WrapperYAMLException): void;
   schema?: Schema | undefined;
@@ -329,7 +342,7 @@ export type ResolveOptions = LoadOptions &
 /** Options object passed to control liveLoader behavior. */
 export type LiveLoaderOptions = Omit<
   LoadOptions,
-  "filename" | "filepath" | "paramsVal"
+  "filename" | "filepath" | "params"
 > & {
   /**
    * Function to call when a watcher detect file change.
@@ -530,6 +543,11 @@ export type Kind = "sequence" | "scalar" | "mapping";
  * Types of parse event.
  */
 export type ParseEventType = "open" | "close";
+
+/**
+ * Legacy type.
+ */
+export type EventType = "open" | "close";
 
 /**
  * Types of file system event.

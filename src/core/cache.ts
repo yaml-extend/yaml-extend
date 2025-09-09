@@ -1,12 +1,12 @@
 import { resolve } from "path";
-import { hashObj, hashStr } from "./helpers.js";
+import { hashParams, hashStr } from "./helpers.js";
 import type {
   LoadCache,
   LoadIdsToModules,
   ModulesToLoadIds,
   DirectivesObj,
   ModuleLoadCache,
-  ParamsCache,
+  ParamLoadEntry,
 } from "../types.js";
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -37,35 +37,35 @@ export const modulesToLoadIds: ModulesToLoadIds = new Map();
  * @param str - YAML String passed.
  * @param filepath - Path of the readed YAML file.
  * @param blueprint - Output from execution of the YAML string.
- * @param dirObj - Object that holds metadata about the directives.
+ * @param directives - Object that holds metadata about the directives.
  */
 export function addModuleCache(
   loadId: string,
   str: string,
   filepath: string,
   blueprint: unknown,
-  dirObj: DirectivesObj
+  directives: DirectivesObj
 ): void {
   // resolve filepath
-  const resPath = resolve(filepath);
+  const resolvedPath = resolve(filepath);
 
   // hash string, params and path
   const hashedStr = hashStr(str);
 
   // get module cache
-  let moduleCache = modulesCache.get(resPath);
+  let moduleCache = modulesCache.get(resolvedPath);
 
   // if module cache is not present create new one
   if (moduleCache === undefined) {
     moduleCache = {
-      str,
-      resPath,
-      hashedStr,
-      dirObj,
+      source: str,
+      sourceHash: hashedStr,
+      resolvedPath,
+      directives,
       blueprint: undefined,
-      loadCache: new Map(),
+      loadByParamHash: new Map(),
     };
-    modulesCache.set(resPath, moduleCache);
+    modulesCache.set(resolvedPath, moduleCache);
   }
 
   // save blueprint
@@ -77,34 +77,34 @@ export function addModuleCache(
     paths = new Set<string>();
     loadIdsToModules.set(loadId, paths);
   }
-  paths.add(resPath);
+  paths.add(resolvedPath);
 
   // path -> ids
-  let ids = modulesToLoadIds.get(resPath);
+  let ids = modulesToLoadIds.get(resolvedPath);
   if (!ids) {
     ids = new Set<string>();
-    modulesToLoadIds.set(resPath, ids);
+    modulesToLoadIds.set(resolvedPath, ids);
   }
   ids.add(loadId);
 }
 
 export function addLoadCache(
   filepath: string,
-  paramsVal: Record<string, string> | undefined,
+  params: Record<string, string> | undefined,
   load: unknown
 ) {
   // resolve filepath
-  const resPath = resolve(filepath);
+  const resolvedPath = resolve(filepath);
 
   // get module cache
-  const moduleCache = modulesCache.get(resPath);
+  const moduleCache = modulesCache.get(resolvedPath);
   if (moduleCache === undefined) return;
 
   // hash params
-  const hashedParams = hashObj(paramsVal ?? {});
+  const hashedParams = hashParams(params ?? {});
 
   // add load
-  moduleCache.loadCache.set(hashedParams, { paramsVal, load });
+  moduleCache.loadByParamHash.set(hashedParams, { params, load });
 }
 
 /**
@@ -127,7 +127,7 @@ export function getModuleCache(
   // 2nd step verification by comparing old and new hashed str
   if (str) {
     const newStrHash = hashStr(str);
-    if (newStrHash !== moduleCache.hashedStr) return;
+    if (newStrHash !== moduleCache.sourceHash) return;
   }
 
   // return blue print
@@ -137,13 +137,13 @@ export function getModuleCache(
 /**
  * Function that checks if specific load with module params is cached.
  * @param modulePath - Url path of the module that will be deleted.
- * @param paramsVal - Value of module params in YAML sting.
+ * @param params - Value of module params in YAML sting.
  * @returns Object that stores load value and module params used to load it.
  */
 export function getLoadCache(
   modulePath: string | undefined,
-  paramsVal: Record<string, string> | undefined
-): ParamsCache | undefined {
+  params: Record<string, string> | undefined
+): ParamLoadEntry | undefined {
   // if no path supplied return
   if (!modulePath) return;
 
@@ -152,10 +152,10 @@ export function getLoadCache(
   if (!moduleCache) return;
 
   // hash params
-  const hashedParams = hashObj(paramsVal ?? {});
+  const hashedParams = hashParams(params ?? {});
 
   // get cache of this load with params using hashed params
-  const cache = moduleCache.loadCache.get(hashedParams);
+  const cache = moduleCache.loadByParamHash.get(hashedParams);
 
   // return cache
   return cache;
@@ -169,7 +169,7 @@ export function resetModuleCache(modulePath: string): void {
   const moduleCache = modulesCache.get(modulePath);
   if (moduleCache !== undefined) {
     moduleCache.blueprint = undefined;
-    moduleCache.loadCache.clear();
+    moduleCache.loadByParamHash.clear();
   }
 }
 

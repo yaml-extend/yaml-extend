@@ -4,8 +4,9 @@ import type { TypeConstructorOptions } from "../types.js";
  * Type to handle tags and custom data types in YAML.
  */
 export class Type {
+  /** @internal - implementation detail, not part of public API */
   /** Tag name of the type. */
-  #tag: string;
+  private _tag: string;
 
   /** YAML data type that will be handled by this Tag/Type. */
   kind?: TypeConstructorOptions["kind"];
@@ -71,7 +72,7 @@ export class Type {
    * @param opts - Configirations and options that defines how tag handle data.
    */
   constructor(tag: string, opts?: TypeConstructorOptions) {
-    this.#tag = tag;
+    this._tag = tag;
     this.kind = opts?.kind;
     this.resolve = opts?.resolve;
     this.construct = opts?.construct;
@@ -84,7 +85,8 @@ export class Type {
     this.styleAliases = opts?.styleAliases;
   }
 
+  /** Read only, Tag name of the type. */
   get tag() {
-    return this.#tag;
+    return this._tag;
   }
 }

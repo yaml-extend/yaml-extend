@@ -4,6 +4,7 @@ import { resolve, relative, parse } from "path";
 import { WrapperYAMLException } from "../wrapperClasses/wrapperError.js";
 import { fileNameRegex } from "./load/regex.js";
 import { createHash, randomBytes } from "crypto";
+import type { HandledLoadOpts, LiveLoaderOptions } from "../types.js";
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // This file contains Helper functions that are not related to our core work directly.
@@ -26,10 +27,14 @@ export function resolvePath(targetPath: string, currentPath: string) {
  * @param currentPath - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
-export function readFile(resolvedPath: string, currentPath: string): string {
+export function readFile(
+  resolvedPath: string,
+  currentPath: string,
+  loadOpts: HandledLoadOpts | LiveLoaderOptions
+): string {
   const resCurrentPath = resolve(currentPath);
 
-  if (!isInsideSandBox(resolvedPath, resCurrentPath))
+  if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
     throw new WrapperYAMLException(
       `Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`
     );
@@ -48,11 +53,12 @@ export function readFile(resolvedPath: string, currentPath: string): string {
  */
 export async function readFileAsync(
   resolvedPath: string,
-  currentPath: string
+  currentPath: string,
+  loadOpts: HandledLoadOpts | LiveLoaderOptions
 ): Promise<string> {
   const resCurrentPath = resolve(currentPath);
 
-  if (!isInsideSandBox(resolvedPath, resCurrentPath))
+  if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
     throw new WrapperYAMLException(
       `Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`
     );

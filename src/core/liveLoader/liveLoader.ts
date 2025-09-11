@@ -73,7 +73,11 @@ export class LiveLoader {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
     // read str
-    const str = readFile(resolvedPath, this._liveLoaderOpts.basePath!);
+    const str = readFile(
+      resolvedPath,
+      this._liveLoaderOpts.basePath!,
+      this._liveLoaderOpts
+    );
 
     try {
       // load str
@@ -119,7 +123,8 @@ export class LiveLoader {
     // read str
     const str = await readFileAsync(
       resolvedPath,
-      this._liveLoaderOpts.basePath!
+      this._liveLoaderOpts.basePath!,
+      this._liveLoaderOpts
     );
 
     try {

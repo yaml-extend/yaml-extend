@@ -388,7 +388,7 @@ function rootFileRead(opts: HandledLoadOpts): string {
   // resolve path
   const resolvedPath = resolvePath(opts.filepath, opts.basePath!);
   // read file
-  return readFile(resolvedPath, opts.basePath!);
+  return readFile(resolvedPath, opts.basePath!, opts);
 }
 
 /**
@@ -405,7 +405,7 @@ async function rootFileReadAsync(opts: HandledLoadOpts): Promise<string> {
   // resolve path
   const resolvedPath = resolvePath(opts.filepath, opts.basePath!);
   // read file
-  return await readFileAsync(resolvedPath, opts.basePath!);
+  return await readFileAsync(resolvedPath, opts.basePath!, opts);
 }
 
 /**

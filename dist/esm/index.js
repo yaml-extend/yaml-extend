@@ -281,9 +281,9 @@ function resolvePath(targetPath, currentPath) {
  * @param currentPath - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
-function readFile(resolvedPath, currentPath) {
+function readFile(resolvedPath, currentPath, loadOpts) {
     const resCurrentPath = resolve$1(currentPath);
-    if (!isInsideSandBox(resolvedPath, resCurrentPath))
+    if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
         throw new WrapperYAMLException(`Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`);
     if (!isYamlFile(resolvedPath))
         throw new WrapperYAMLException(`You can only load YAML files the loader.`);
@@ -295,9 +295,9 @@ function readFile(resolvedPath, currentPath) {
  * @param currentPath - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
-async function readFileAsync(resolvedPath, currentPath) {
+async function readFileAsync(resolvedPath, currentPath, loadOpts) {
     const resCurrentPath = resolve$1(currentPath);
-    if (!isInsideSandBox(resolvedPath, resCurrentPath))
+    if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
         throw new WrapperYAMLException(`Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`);
     if (!isYamlFile(resolvedPath))
         throw new WrapperYAMLException(`You can only load YAML files the loader. loaded file: ${resolvedPath}`);
@@ -2921,7 +2921,7 @@ function rootFileRead(opts) {
     // resolve path
     const resolvedPath = resolvePath(opts.filepath, opts.basePath);
     // read file
-    return readFile(resolvedPath, opts.basePath);
+    return readFile(resolvedPath, opts.basePath, opts);
 }
 /**
  * Method to read file from file system directly if str passed to load function was a path url or filepath passed without str. works async.
@@ -2935,7 +2935,7 @@ async function rootFileReadAsync(opts) {
     // resolve path
     const resolvedPath = resolvePath(opts.filepath, opts.basePath);
     // read file
-    return await readFileAsync(resolvedPath, opts.basePath);
+    return await readFileAsync(resolvedPath, opts.basePath, opts);
 }
 /**
  * Function to handle new YAML file that hasn't been loaded before by creating module cache with blueprint for it. it also resolve the blueprint with empty params
@@ -3260,7 +3260,7 @@ class LiveLoader {
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
         // read str
-        const str = readFile(resolvedPath, this._liveLoaderOpts.basePath);
+        const str = readFile(resolvedPath, this._liveLoaderOpts.basePath, this._liveLoaderOpts);
         try {
             // load str
             const load = internalLoad(str, { ...this._liveLoaderOpts, params, filepath: resolvedPath }, this._liveLoaderId);
@@ -3297,7 +3297,7 @@ class LiveLoader {
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
         // read str
-        const str = await readFileAsync(resolvedPath, this._liveLoaderOpts.basePath);
+        const str = await readFileAsync(resolvedPath, this._liveLoaderOpts.basePath, this._liveLoaderOpts);
         try {
             // load str
             const load = await internalLoadAsync(str, { ...this._liveLoaderOpts, params, filepath: resolvedPath }, this._liveLoaderId);

@@ -72,6 +72,9 @@ export class LiveLoader {
   addModule(path: string, params?: Record<string, string>): unknown {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
+    // add module to be watched
+    const callback = this._watchCallbackFactory(resolvedPath, false);
+    this._fileSystem.addFile(resolvedPath, callback);
     // read str
     const str = readFile(
       resolvedPath,
@@ -120,6 +123,9 @@ export class LiveLoader {
   ): Promise<unknown> {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
+    // add module to be watched
+    const callback = this._watchCallbackFactory(resolvedPath, false);
+    this._fileSystem.addFile(resolvedPath, callback);
     // read str
     const str = await readFileAsync(
       resolvedPath,

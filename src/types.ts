@@ -396,12 +396,10 @@ export interface TypeConstructorOptions {
    * Function that will be executed on raw node to return custom data type in the load.
    * @param data - Raw node's value.
    * @param type - Type of the tag.
-   * @param param - Param passed along with the tag which is single scalar value.
+   * @param arg - Argument passed along with the tag which is single scalar value.
    * @returns Value that will replace node's raw value in the load.
    */
-  construct?:
-    | ((data: any, type?: string, params?: string) => unknown)
-    | undefined;
+  construct?: ((data: any, type?: string, arg?: string) => unknown) | undefined;
 
   /**
    * Used when dumping (serializing) JS objects to YAML. If a value is an instance of the provided constructor (or matches the object prototype),

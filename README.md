@@ -1341,14 +1341,15 @@ Options object passed to control resolve behavior. Extends `LoadOptions` and `Du
 
 Options object passed to control liveLoader behavior.
 
-- `onUpdate?: (eventType: FileEventType, path: string, load: unknown)` — Default: `undefined` — See [`FileEventType`](#fileeventtype)
+- `onUpdate?: (path: string, load: unknown)` — Default: `undefined` — See [`FileEventType`](#fileeventtype)
   Function to call when a watcher detect file change.
-  `eventType`: Type of the file change event. either "change" or "rename".
   `path`: Path of updated YAML file.
   `load`: New load value of the YAML file or last cached load value if error is thrown.
 
-- `warnOnError?: boolean` — Default: `false`
-  How live loader will react when load error is thrown. You should note that error throwing will be very likely to occur when you update files. if setted to true errors will be passed to onWarning function otherwise errors will be ommited.
+- `onError?: (path: string, load: unknown)` — Default: `undefined` — See [`FileEventType`](#fileeventtype)
+  Function to call when a watched file throw yaml-extend error.
+  `path`: Path of updated YAML file.
+  `error`: YAMLException or WrapperYAMLException thrown. — see [`YAMLException`](#yamlexception) / [`WrapperYAMLException`](#wrapperyamlexception)
 
 - `resetOnError?: boolean` — Default: `false`
   How live loader will react when load error is thrown. You should note that error throwing will be very likely to occur when you update files. if setted to true cache of this module will be reseted to null otherwise nothing will happen to old cache when error is thrown.
@@ -1539,8 +1540,8 @@ Cache that stores all resolved loads and metadata for a single YAML module.
 
 Map from params-hash → ParamLoadEntry. Use the hash of the params (string) as the map key so different param sets map to their respective resolved load results.
 
-- `directives: DirectivesObj` — See [DirectivesObj](#directivesobj)
-  Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE).
+- `directives: DirectivesObj | undefined` — See [DirectivesObj](#directivesobj)
+  Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). undefined if invalid YAML string is passed.
 
 - `resolvedPath: string`
   Absolute or resolved filesystem path of the module.
@@ -1551,8 +1552,8 @@ Map from params-hash → ParamLoadEntry. Use the hash of the params (string) as 
 - `sourceHash: string`
   Hash computed from `source` (used to detect changes / cache misses).
 
-- `blueprint: unknown`
-  Canonical "blueprint" produced from the YAML text used to generate loads.
+- `blueprint: unknown | undefined`
+  Canonical "blueprint" produced from the YAML text used to generate loads. undefined if invalid YAML string is passed.
 
 ### Enums
 

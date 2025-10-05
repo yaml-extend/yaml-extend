@@ -93,7 +93,11 @@ export function load(str: string, opts?: LoadOptions): unknown {
     const cachedModule = getModuleCache(handledOpts.filepath, str);
 
     // if module is cached get blue print and dir obj from it directly, if not execute string
-    if (cachedModule && cachedModule.blueprint !== undefined) {
+    if (
+      cachedModule &&
+      cachedModule.blueprint !== undefined &&
+      cachedModule.directives !== undefined
+    ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
     } else {
@@ -176,7 +180,11 @@ export async function loadAsync(
     const cachedModule = getModuleCache(handledOpts.filepath, str);
 
     // if module is cached get blue print and dir obj from it directly, if not execute string
-    if (cachedModule && cachedModule.blueprint !== undefined) {
+    if (
+      cachedModule &&
+      cachedModule.blueprint !== undefined &&
+      cachedModule.directives !== undefined
+    ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
     } else {
@@ -247,7 +255,11 @@ export function internalLoad(
     const cachedModule = getModuleCache(handledOpts.filepath, str);
 
     // if module is cached get blue print and dir obj from it directly, if not execute string
-    if (cachedModule && cachedModule.blueprint !== undefined) {
+    if (
+      cachedModule &&
+      cachedModule.blueprint !== undefined &&
+      cachedModule.directives !== undefined
+    ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
     } else {
@@ -312,7 +324,11 @@ export async function internalLoadAsync(
     const cachedModule = getModuleCache(handledOpts.filepath, str);
 
     // if module is cached get blue print and dir obj from it directly, if not execute string
-    if (cachedModule && cachedModule.blueprint !== undefined) {
+    if (
+      cachedModule &&
+      cachedModule.blueprint !== undefined &&
+      cachedModule.directives !== undefined
+    ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
     } else {
@@ -486,6 +502,9 @@ function executeStr(
   opts: HandledLoadOpts,
   loadId: string
 ): { blueprint: unknown; directives: DirectivesObj } {
+  // create empty module cache
+  if (opts.filepath) addModuleCache(loadId, str, opts.filepath);
+
   // read directives
   const directives = directivesHandler.handle(str);
 
@@ -540,6 +559,9 @@ async function executeStrAsync(
   opts: HandledLoadOpts,
   loadId: string
 ): Promise<{ blueprint: unknown; directives: DirectivesObj }> {
+  // create empty module cache
+  if (opts.filepath) addModuleCache(loadId, str, opts.filepath);
+
   // read directives
   const directives = directivesHandler.handle(str);
 

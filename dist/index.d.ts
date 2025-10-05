@@ -297,16 +297,16 @@ type ModuleLoadCache = {
      * Use the hash of the params (string) as the map key so different param sets map to their respective resolved load results.
      */
     loadByParamHash: Map<string, ParamLoadEntry>;
-    /** Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). */
-    directives: DirectivesObj;
+    /** Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). undefined if invalid YAML string is passed. */
+    directives: DirectivesObj | undefined;
     /** Absolute or resolved filesystem path of the module. */
     resolvedPath: string;
     /** Original string provided to `load()` for this module. */
     source: string;
     /** Hash computed from `source` (used to detect changes / cache misses). */
     sourceHash: string;
-    /** Canonical "blueprint" produced from the YAML text used to generate loads. */
-    blueprint: unknown;
+    /** Canonical "blueprint" produced from the YAML text used to generate loads. undefined if invalid YAML string is passed. */
+    blueprint: unknown | undefined;
 };
 /** Options object passed to control load behavior. */
 interface LoadOptions {
@@ -380,16 +380,17 @@ type ResolveOptions = LoadOptions & DumpOptions & {
 type LiveLoaderOptions = Omit<LoadOptions, "filename" | "filepath" | "params"> & {
     /**
      * Function to call when a watcher detect file change.
-     * @param eventType - Type of the file change event. either "change" or "rename".
      * @param path - Path of updated YAML file.
      * @param load - New load value of the YAML file or last cached load value if error is thrown.
      */
-    onUpdate?: (eventType: FileEventType, path: string, newLoad: unknown) => void;
+    onUpdate?: (path: string, newLoad: unknown) => void;
     /**
-     * How live loader will react when load error is thrown. You should note that error throwing will be very likely to occur when you update files. if setted to true
-     * errors will be passed to onWarning function otherwise errors will be ommited. default is false.
+     * Function to call when a watched file throw yaml-extend error.
+     * @param eventType - Type of the file change event. either "change" or "rename".
+     * @param path - Path of updated YAML file.
+     * @param error - YAMLException or WrapperYAMLException thrown.
      */
-    warnOnError?: boolean;
+    onError?: (path: string, error: YAMLException | WrapperYAMLException) => void;
     /**
      * How live loader will react when load error is thrown. You should note that error throwing will be very likely to occur when you update files. if setted to true
      * cache of this module will be reseted to null otherwise nothing will happen to old cache when error is thrown. default is false.
@@ -413,10 +414,10 @@ interface TypeConstructorOptions {
      * Function that will be executed on raw node to return custom data type in the load.
      * @param data - Raw node's value.
      * @param type - Type of the tag.
-     * @param param - Param passed along with the tag which is single scalar value.
+     * @param arg - Argument passed along with the tag which is single scalar value.
      * @returns Value that will replace node's raw value in the load.
      */
-    construct?: ((data: any, type?: string, params?: string) => unknown) | undefined;
+    construct?: ((data: any, type?: string, arg?: string) => unknown) | undefined;
     /**
      * Used when dumping (serializing) JS objects to YAML. If a value is an instance of the provided constructor (or matches the object prototype),
      * the dumper can choose this type to represent it.

@@ -174,8 +174,8 @@ export type ModuleLoadCache = {
    */
   loadByParamHash: Map<string, ParamLoadEntry>;
 
-  /** Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). */
-  directives: DirectivesObj;
+  /** Parsed directive data for the module (e.g., %TAG, %PARAM, %LOCAL, %PRIVATE). undefined if invalid YAML string is passed. */
+  directives: DirectivesObj | undefined;
 
   /** Absolute or resolved filesystem path of the module. */
   resolvedPath: string;
@@ -186,8 +186,8 @@ export type ModuleLoadCache = {
   /** Hash computed from `source` (used to detect changes / cache misses). */
   sourceHash: string;
 
-  /** Canonical "blueprint" produced from the YAML text used to generate loads. */
-  blueprint: unknown;
+  /** Canonical "blueprint" produced from the YAML text used to generate loads. undefined if invalid YAML string is passed. */
+  blueprint: unknown | undefined;
 };
 
 /** Cache of the modules loaded by load functions (load, loadAsync, createLoader...). each module loaded is keyed by its resolved path. */
@@ -346,17 +346,18 @@ export type LiveLoaderOptions = Omit<
 > & {
   /**
    * Function to call when a watcher detect file change.
-   * @param eventType - Type of the file change event. either "change" or "rename".
    * @param path - Path of updated YAML file.
    * @param load - New load value of the YAML file or last cached load value if error is thrown.
    */
-  onUpdate?: (eventType: FileEventType, path: string, newLoad: unknown) => void;
+  onUpdate?: (path: string, newLoad: unknown) => void;
 
   /**
-   * How live loader will react when load error is thrown. You should note that error throwing will be very likely to occur when you update files. if setted to true
-   * errors will be passed to onWarning function otherwise errors will be ommited. default is false.
+   * Function to call when a watched file throw yaml-extend error.
+   * @param eventType - Type of the file change event. either "change" or "rename".
+   * @param path - Path of updated YAML file.
+   * @param error - YAMLException or WrapperYAMLException thrown.
    */
-  warnOnError?: boolean;
+  onError?: (path: string, error: YAMLException | WrapperYAMLException) => void;
 
   /**
    * How live loader will react when load error is thrown. You should note that error throwing will be very likely to occur when you update files. if setted to true

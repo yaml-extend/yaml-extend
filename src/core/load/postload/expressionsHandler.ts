@@ -312,6 +312,8 @@ export class Expression {
     // get needed cache data
     const { blueprint } = cache;
 
+    console.debug("blueprint: ", blueprint);
+
     // update local values
     cache.localsVal.push(localsVal);
 
@@ -543,8 +545,13 @@ export class Expression {
 
     // start traversing
     for (const p of path) {
+      // resolve node if it's blueprint instance
+      if (node instanceof BlueprintInstance) {
+        node = this._resolveUnknown(node, id, true, path);
+      }
+
       // if node is not record throw
-      if (!this._isRecord(node) || node instanceof BlueprintInstance)
+      if (!this._isRecord(node))
         throw new WrapperYAMLException(
           `Invalid path in expression: ${path.join(".")}`
         );
@@ -596,8 +603,13 @@ export class Expression {
 
     // start traversing
     for (const p of path) {
+      // resolve node if it's blueprint instance
+      if (node instanceof BlueprintInstance) {
+        node = await this._resolveUnknownAsync(node, id, true, path);
+      }
+
       // if node is not record throw
-      if (!this._isRecord(node) || node instanceof BlueprintInstance)
+      if (!this._isRecord(node))
         throw new WrapperYAMLException(
           `Invalid path in expression: ${path.join(".")}.`
         );

@@ -1,8 +1,8 @@
 import {
   LiveLoaderOptions,
-  WrapperYAMLException,
   YAMLException,
   ModuleLoadCache,
+  WrapperYAMLException,
 } from "../../types.js";
 import { FileSystem } from "./fileSystem.js";
 import { Debouncer } from "./debouncer.js";
@@ -72,7 +72,7 @@ export class LiveLoader {
   addModule(path: string, params?: Record<string, string>): unknown {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
-    // add module to be watched
+    // add module to watch
     const callback = this._watchCallbackFactory(resolvedPath, false);
     this._fileSystem.addFile(resolvedPath, callback);
     // read str
@@ -99,14 +99,18 @@ export class LiveLoader {
         const callback = this._watchCallbackFactory(p, false);
         this._fileSystem.addFile(p, callback);
       }
+      // execute onUpdate
+      this._liveLoaderOpts.onUpdate?.(path, load);
+      // return load
       return load;
     } catch (err) {
-      if (this._liveLoaderOpts.resetOnError) resetModuleCache(resolvedPath);
-      if (this._liveLoaderOpts.warnOnError)
-        this._liveLoaderOpts.onWarning?.call(
-          null,
-          err as YAMLException | WrapperYAMLException
-        );
+      // reset if defined to do so
+      if (this._liveLoaderOpts.resetOnError) resetModuleCache(path);
+      // execute onError
+      this._liveLoaderOpts.onError?.(
+        resolvedPath,
+        err as WrapperYAMLException | YAMLException
+      );
     }
   }
 
@@ -123,7 +127,7 @@ export class LiveLoader {
   ): Promise<unknown> {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
-    // add module to be watched
+    // add module to watch
     const callback = this._watchCallbackFactory(resolvedPath, false);
     this._fileSystem.addFile(resolvedPath, callback);
     // read str
@@ -150,14 +154,18 @@ export class LiveLoader {
         const callback = this._watchCallbackFactory(p, true);
         this._fileSystem.addFile(p, callback);
       }
+      // execute onUpdate
+      this._liveLoaderOpts.onUpdate?.(path, load);
+      // return load
       return load;
     } catch (err) {
-      if (this._liveLoaderOpts.resetOnError) resetModuleCache(resolvedPath);
-      if (this._liveLoaderOpts.warnOnError)
-        this._liveLoaderOpts.onWarning?.call(
-          null,
-          err as YAMLException | WrapperYAMLException
-        );
+      // reset if defined to do so
+      if (this._liveLoaderOpts.resetOnError) resetModuleCache(path);
+      // execute onError
+      this._liveLoaderOpts.onError?.(
+        resolvedPath,
+        err as WrapperYAMLException | YAMLException
+      );
     }
   }
 
@@ -265,40 +273,20 @@ export class LiveLoader {
     isAsync: boolean
   ): (eventType: WatchEventType) => void {
     return (e) => {
-      try {
-        this._debouncer.debounce(async () => {
-          // if file is change reset it's cache then re-load it
-          if (e === "change") {
-            // reset module cache so it will be re-evaluated
-            resetModuleCache(path);
+      this._debouncer.debounce(async () => {
+        // if file is change reset it's cache then re-load it
+        if (e === "change") {
+          // reset module cache so it will be re-evaluated
+          resetModuleCache(path);
+          // re-load
+          isAsync ? await this.addModuleAsync(path) : this.addModule(path);
+        }
 
-            // re-load
-            const newLoad = isAsync
-              ? await this.addModuleAsync(path)
-              : this.addModule(path);
-
-            // execute onUpdate
-            this._liveLoaderOpts.onUpdate?.(e, path, newLoad);
-          }
-
-          // if file is renamed delete it's cache as all future loads will use the new name
-          if (e === "rename") {
-            // delete path
-            this.deleteModule(path);
-
-            // execute onUpdate
-            this._liveLoaderOpts.onUpdate?.(e, path, null);
-          }
-        });
-      } catch (err) {
-        if (this._liveLoaderOpts.resetOnError) resetModuleCache(path);
-        if (this._liveLoaderOpts.warnOnError)
-          this._liveLoaderOpts.onWarning?.call(
-            null,
-            err as YAMLException | WrapperYAMLException
-          );
-        this._liveLoaderOpts.onUpdate?.(e, path, this.getModule(path));
-      }
+        // if file is renamed delete it's cache as all future loads will use the new name
+        if (e === "rename") {
+          this.deleteModule(path);
+        }
+      });
     };
   }
 }

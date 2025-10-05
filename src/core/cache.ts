@@ -43,8 +43,8 @@ export function addModuleCache(
   loadId: string,
   str: string,
   filepath: string,
-  blueprint: unknown,
-  directives: DirectivesObj
+  blueprint?: unknown,
+  directives?: DirectivesObj
 ): void {
   // resolve filepath
   const resolvedPath = resolve(filepath);
@@ -55,8 +55,14 @@ export function addModuleCache(
   // get module cache
   let moduleCache = modulesCache.get(resolvedPath);
 
-  // if module cache is not present create new one
-  if (moduleCache === undefined) {
+  // if module cache already present update it, otherwise create new object
+  if (moduleCache) {
+    moduleCache.source = str;
+    moduleCache.sourceHash = hashedStr;
+    moduleCache.resolvedPath = resolvedPath;
+    moduleCache.directives = directives;
+    moduleCache.blueprint = blueprint;
+  } else {
     moduleCache = {
       source: str,
       sourceHash: hashedStr,
@@ -67,9 +73,6 @@ export function addModuleCache(
     };
     modulesCache.set(resolvedPath, moduleCache);
   }
-
-  // save blueprint
-  moduleCache.blueprint = blueprint;
 
   // id -> paths
   let paths = loadIdsToModules.get(loadId);

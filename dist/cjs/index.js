@@ -1698,6 +1698,7 @@ class Expression {
             throw new WrapperYAMLException(BUG_MESSAGE);
         // get needed cache data
         const { blueprint } = cache;
+        console.debug("blueprint: ", blueprint);
         // update local values
         cache.localsVal.push(localsVal);
         try {
@@ -1872,8 +1873,12 @@ class Expression {
         let node = tree;
         // start traversing
         for (const p of path) {
+            // resolve node if it's blueprint instance
+            if (node instanceof BlueprintInstance) {
+                node = this._resolveUnknown(node, id, true, path);
+            }
             // if node is not record throw
-            if (!this._isRecord(node) || node instanceof BlueprintInstance)
+            if (!this._isRecord(node))
                 throw new WrapperYAMLException(`Invalid path in expression: ${path.join(".")}`);
             // if item is present in node update it and continue
             if (p in node) {
@@ -1911,8 +1916,12 @@ class Expression {
         let node = tree;
         // start traversing
         for (const p of path) {
+            // resolve node if it's blueprint instance
+            if (node instanceof BlueprintInstance) {
+                node = await this._resolveUnknownAsync(node, id, true, path);
+            }
             // if node is not record throw
-            if (!this._isRecord(node) || node instanceof BlueprintInstance)
+            if (!this._isRecord(node))
                 throw new WrapperYAMLException(`Invalid path in expression: ${path.join(".")}.`);
             // if item is present in node update it and continue
             if (p in node) {
@@ -2508,8 +2517,15 @@ function addModuleCache(loadId, str, filepath, blueprint, directives) {
     const hashedStr = hashStr(str);
     // get module cache
     let moduleCache = modulesCache.get(resolvedPath);
-    // if module cache is not present create new one
-    if (moduleCache === undefined) {
+    // if module cache already present update it, otherwise create new object
+    if (moduleCache) {
+        moduleCache.source = str;
+        moduleCache.sourceHash = hashedStr;
+        moduleCache.resolvedPath = resolvedPath;
+        moduleCache.directives = directives;
+        moduleCache.blueprint = blueprint;
+    }
+    else {
         moduleCache = {
             source: str,
             sourceHash: hashedStr,
@@ -2520,8 +2536,6 @@ function addModuleCache(loadId, str, filepath, blueprint, directives) {
         };
         modulesCache.set(resolvedPath, moduleCache);
     }
-    // save blueprint
-    moduleCache.blueprint = blueprint;
     // id -> paths
     let paths = loadIdsToModules.get(loadId);
     if (!paths) {
@@ -2690,7 +2704,9 @@ function load(str, opts) {
         // get cache of the module
         const cachedModule = getModuleCache(handledOpts.filepath, str);
         // if module is cached get blue print and dir obj from it directly, if not execute string
-        if (cachedModule && cachedModule.blueprint !== undefined) {
+        if (cachedModule &&
+            cachedModule.blueprint !== undefined &&
+            cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
         }
@@ -2754,7 +2770,9 @@ async function loadAsync(str, opts) {
         // get cache of the module
         const cachedModule = getModuleCache(handledOpts.filepath, str);
         // if module is cached get blue print and dir obj from it directly, if not execute string
-        if (cachedModule && cachedModule.blueprint !== undefined) {
+        if (cachedModule &&
+            cachedModule.blueprint !== undefined &&
+            cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
         }
@@ -2810,7 +2828,9 @@ function internalLoad(str, opts, loadId) {
         // get cache of the module
         const cachedModule = getModuleCache(handledOpts.filepath, str);
         // if module is cached get blue print and dir obj from it directly, if not execute string
-        if (cachedModule && cachedModule.blueprint !== undefined) {
+        if (cachedModule &&
+            cachedModule.blueprint !== undefined &&
+            cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
         }
@@ -2859,7 +2879,9 @@ async function internalLoadAsync(str, opts, loadId) {
         // get cache of the module
         const cachedModule = getModuleCache(handledOpts.filepath, str);
         // if module is cached get blue print and dir obj from it directly, if not execute string
-        if (cachedModule && cachedModule.blueprint !== undefined) {
+        if (cachedModule &&
+            cachedModule.blueprint !== undefined &&
+            cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
         }
@@ -2990,6 +3012,9 @@ async function handleNewModuleAsync(str, opts, loadId) {
  * @returns Object that holds blue print and directive object which has meta data read from directive part of the YAML.
  */
 function executeStr(str, opts, loadId) {
+    // create empty module cache
+    if (opts.filepath)
+        addModuleCache(loadId, str, opts.filepath);
     // read directives
     const directives = directivesHandler.handle(str);
     // overwrite filename if defined in directives
@@ -3028,6 +3053,9 @@ function executeStr(str, opts, loadId) {
  * @returns Object that holds blue print and directive object which has meta data read from directive part of the YAML.
  */
 async function executeStrAsync(str, opts, loadId) {
+    // create empty module cache
+    if (opts.filepath)
+        addModuleCache(loadId, str, opts.filepath);
     // read directives
     const directives = directivesHandler.handle(str);
     // overwrite filename if defined in directives
@@ -3258,10 +3286,10 @@ class LiveLoader {
      * @returns Value of loaded YAML file.
      */
     addModule(path, params) {
-        var _a;
+        var _a, _b, _c, _d;
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
-        // add module to be watched
+        // add module to watch
         const callback = this._watchCallbackFactory(resolvedPath, false);
         this._fileSystem.addFile(resolvedPath, callback);
         // read str
@@ -3281,13 +3309,17 @@ class LiveLoader {
                 const callback = this._watchCallbackFactory(p, false);
                 this._fileSystem.addFile(p, callback);
             }
+            // execute onUpdate
+            (_b = (_a = this._liveLoaderOpts).onUpdate) === null || _b === void 0 ? void 0 : _b.call(_a, path, load);
+            // return load
             return load;
         }
         catch (err) {
+            // reset if defined to do so
             if (this._liveLoaderOpts.resetOnError)
-                resetModuleCache(resolvedPath);
-            if (this._liveLoaderOpts.warnOnError)
-                (_a = this._liveLoaderOpts.onWarning) === null || _a === void 0 ? void 0 : _a.call(null, err);
+                resetModuleCache(path);
+            // execute onError
+            (_d = (_c = this._liveLoaderOpts).onError) === null || _d === void 0 ? void 0 : _d.call(_c, resolvedPath, err);
         }
     }
     /**
@@ -3298,10 +3330,10 @@ class LiveLoader {
      * @returns Value of loaded YAML file.
      */
     async addModuleAsync(path, params) {
-        var _a;
+        var _a, _b, _c, _d;
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
-        // add module to be watched
+        // add module to watch
         const callback = this._watchCallbackFactory(resolvedPath, false);
         this._fileSystem.addFile(resolvedPath, callback);
         // read str
@@ -3321,13 +3353,17 @@ class LiveLoader {
                 const callback = this._watchCallbackFactory(p, true);
                 this._fileSystem.addFile(p, callback);
             }
+            // execute onUpdate
+            (_b = (_a = this._liveLoaderOpts).onUpdate) === null || _b === void 0 ? void 0 : _b.call(_a, path, load);
+            // return load
             return load;
         }
         catch (err) {
+            // reset if defined to do so
             if (this._liveLoaderOpts.resetOnError)
-                resetModuleCache(resolvedPath);
-            if (this._liveLoaderOpts.warnOnError)
-                (_a = this._liveLoaderOpts.onWarning) === null || _a === void 0 ? void 0 : _a.call(null, err);
+                resetModuleCache(path);
+            // execute onError
+            (_d = (_c = this._liveLoaderOpts).onError) === null || _d === void 0 ? void 0 : _d.call(_c, resolvedPath, err);
         }
     }
     /**
@@ -3431,37 +3467,19 @@ class LiveLoader {
      */
     _watchCallbackFactory(path, isAsync) {
         return (e) => {
-            var _a, _b, _c;
-            try {
-                this._debouncer.debounce(async () => {
-                    var _a, _b, _c, _d;
-                    // if file is change reset it's cache then re-load it
-                    if (e === "change") {
-                        // reset module cache so it will be re-evaluated
-                        resetModuleCache(path);
-                        // re-load
-                        const newLoad = isAsync
-                            ? await this.addModuleAsync(path)
-                            : this.addModule(path);
-                        // execute onUpdate
-                        (_b = (_a = this._liveLoaderOpts).onUpdate) === null || _b === void 0 ? void 0 : _b.call(_a, e, path, newLoad);
-                    }
-                    // if file is renamed delete it's cache as all future loads will use the new name
-                    if (e === "rename") {
-                        // delete path
-                        this.deleteModule(path);
-                        // execute onUpdate
-                        (_d = (_c = this._liveLoaderOpts).onUpdate) === null || _d === void 0 ? void 0 : _d.call(_c, e, path, null);
-                    }
-                });
-            }
-            catch (err) {
-                if (this._liveLoaderOpts.resetOnError)
+            this._debouncer.debounce(async () => {
+                // if file is change reset it's cache then re-load it
+                if (e === "change") {
+                    // reset module cache so it will be re-evaluated
                     resetModuleCache(path);
-                if (this._liveLoaderOpts.warnOnError)
-                    (_a = this._liveLoaderOpts.onWarning) === null || _a === void 0 ? void 0 : _a.call(null, err);
-                (_c = (_b = this._liveLoaderOpts).onUpdate) === null || _c === void 0 ? void 0 : _c.call(_b, e, path, this.getModule(path));
-            }
+                    // re-load
+                    isAsync ? await this.addModuleAsync(path) : this.addModule(path);
+                }
+                // if file is renamed delete it's cache as all future loads will use the new name
+                if (e === "rename") {
+                    this.deleteModule(path);
+                }
+            });
         };
     }
 }

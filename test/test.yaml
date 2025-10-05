@@ -1,1 +1,9 @@
-node: value
+%IMPORT gg "./test2.yaml"
+---
+node:
+  nested Node:
+    nestedNested.Node: value
+
+x: { $this.node."nested Node" }
+
+y: $this.x."nestedNested.Node"

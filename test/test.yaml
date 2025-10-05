@@ -1,4 +1,5 @@
 %IMPORT gg "./test2.yaml"
+%PRIVATE node
 ---
 node:
   nested Node:
@@ -7,3 +8,5 @@ node:
 x: { $this.node."nested Node" }
 
 y: $this.x."nestedNested.Node"
+
+z: $import.gg.node99

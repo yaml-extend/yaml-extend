@@ -198,12 +198,14 @@ declare function resolveAsync(str: string, opts?: ResolveOptions): Promise<strin
  */
 declare class LiveLoader {
     /**
-     * @param opts - Options object passed to control live loader behavior.
+     * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
+     * per module options here.
      */
     constructor(opts?: LiveLoaderOptions);
     /**
      * Method to set options of the class.
-     * @param opts - Options object passed to control live loader behavior.
+     * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
+     * per module options here.
      */
     setOptions(opts: LiveLoaderOptions): void;
     /**
@@ -211,29 +213,31 @@ declare class LiveLoader {
      * imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled
      * as sync functions and will not be awaited.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param params - Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
+     * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
      * @returns Value of loaded YAML file.
      */
-    addModule(path: string, params?: Record<string, string>): unknown;
+    addModule(path: string, opts?: LiveLoaderOptions): unknown;
     /**
      * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported
      * YAML files in the read YAML string are watched as well. works async so all file watch, reads are async and tags executions will be awaited.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param params - Object of module params aliases and there values to be used in this load.
+     * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
      * @returns Value of loaded YAML file.
      */
-    addModuleAsync(path: string, params?: Record<string, string>): Promise<unknown>;
+    addModuleAsync(path: string, opts?: LiveLoaderOptions): Promise<unknown>;
     /**
      * Method to get cached value of loaded module or file. note that value retuned is module's resolve when params is undefined (default params value are used).
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+     * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for this module.
      * @returns Cached value of YAML file with default modules params or undefined if file is not loaded.
      */
-    getModule(path: string): unknown | undefined;
+    getModule(path: string, ignorePrivate?: boolean): unknown | undefined;
     /**
      * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when params is undefined (default params value are used).
+     * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for all modules.
      * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
      */
-    getAllModules(): Record<string, unknown>;
+    getAllModules(ignorePrivate?: boolean): Record<string, unknown>;
     /**
      * Method to get all cached data about specific module. note that they are passed by reference and should never be mutated.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
@@ -287,6 +291,8 @@ type ParamLoadEntry = {
     params?: Record<string, string>;
     /** Final resolved value returned after parsing/loading the YAML module. */
     load: unknown;
+    /** Final resolved value returned after parsing/loading the YAML module. but with keeping the private nodes. */
+    privateLoad: unknown;
 };
 /**
  * Cache that stores all resolved loads and metadata for a single YAML module.
@@ -324,6 +330,13 @@ interface LoadOptions {
     filepath?: string | undefined;
     /** Mapping of module param aliases to string values that will be used to resolve %PARAM declarations in the module. Loader-supplied params should override any defaults declared with %PARAM. */
     params?: Record<string, string> | undefined;
+    /**
+     * Controls which modules' private node definitions are ignored from the final output, Allowed values:
+     *  - "all" — ignore private definitions in all loaded modules.
+     *  - "current" — ignore private definitions only in the current entry-point module.
+     *  - string[] — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
+     */
+    ignorePrivate?: "all" | "current" | string[];
     /** String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used. */
     filename?: string | undefined;
     /** Function to call on warning messages. */
@@ -377,7 +390,7 @@ type ResolveOptions = LoadOptions & DumpOptions & {
     outputPath?: string;
 };
 /** Options object passed to control liveLoader behavior. */
-type LiveLoaderOptions = Omit<LoadOptions, "filename" | "filepath" | "params"> & {
+type LiveLoaderOptions = LoadOptions & {
     /**
      * Function to call when a watcher detect file change.
      * @param path - Path of updated YAML file.

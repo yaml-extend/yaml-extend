@@ -6,6 +6,7 @@ import {
   HandledLoadOpts,
   InternalLoad,
   InternalLoadAsync,
+  LoadOptions,
 } from "../../../types.js";
 import { circularDepClass } from "../../circularDep.js";
 import { isInsideSandBox, isYamlFile } from "../../helpers.js";
@@ -65,7 +66,8 @@ export class ImportHandler {
         ...loadOpts,
         params: targetParams,
         filepath: resolvedPath,
-      },
+        filename: undefined, // remove the prev filename
+      } as LoadOptions,
       loadId
     );
 
@@ -111,7 +113,8 @@ export class ImportHandler {
         ...loadOpts,
         params: targetParams,
         filepath: resolvedPath,
-      },
+        filename: undefined, // remove the prev filename
+      } as LoadOptions,
       loadId
     );
 

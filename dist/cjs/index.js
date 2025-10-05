@@ -433,6 +433,65 @@ function getClosingChar(str, openCh, closeCh, startIdx) {
     // if no closing at depth zero return -1
     return -1;
 }
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Random helpers.
+/**
+ * Method to check if value is an array or object (record that can contains other primative values).
+ * @param val - Value that will be checked.
+ * @returns Boolean that indicates if value is a record or not.
+ */
+function isRecord(val) {
+    return typeof val === "object" && val !== null;
+}
+// deep-clone the input so we don't mutate the original
+function deepClone(value) {
+    // prefer structuredClone if available (native deep clone)
+    if (typeof globalThis.structuredClone === "function") {
+        return globalThis.structuredClone(value);
+    }
+    // fallback recursive clone that respects records/arrays using isRecord
+    const cloneRec = (v) => {
+        if (!isRecord(v))
+            return v;
+        if (Array.isArray(v)) {
+            const arr = [];
+            for (let i = 0; i < v.length; i++) {
+                arr[i] = cloneRec(v[i]);
+            }
+            return arr;
+        }
+        else {
+            const out = {};
+            for (const k in v) {
+                if (Object.prototype.hasOwnProperty.call(v, k)) {
+                    out[k] = cloneRec(v[k]);
+                }
+            }
+            return out;
+        }
+    };
+    return cloneRec(value);
+}
+/**
+ * Function to allow ignore private load on specific module.
+ * @param load - Load after removing private loads.
+ * @param privateLoad - Load with private nodes still present.
+ * @param opts - Options object passed to the loader.
+ * @returns Either load or privateLoad if file defined to ignore private nodes.
+ */
+function handlePrivateLoad(load, privateLoad, filename, ignorePrivate) {
+    // if ignore private not defined return privateLoad directly
+    if (ignorePrivate === undefined)
+        return load;
+    // if all modules defined to ignore private return fullLoad directly
+    if (ignorePrivate === "all")
+        return privateLoad;
+    // return fullLoad only if filename matches the name of ignores files
+    if (filename && ignorePrivate.includes(filename))
+        return privateLoad;
+    // return privateLoad as default
+    return load;
+}
 
 /**
  * Class that is used to handle tags present in YAML file. this handling is by generating types for any tag present along with it's params, so when passed to js-yaml loader it will
@@ -1402,6 +1461,7 @@ class ImportHandler {
             ...loadOpts,
             params: targetParams,
             filepath: resolvedPath,
+            filename: undefined, // remove the prev filename
         }, loadId);
         // return load
         return load;
@@ -1428,6 +1488,7 @@ class ImportHandler {
             ...loadOpts,
             params: targetParams,
             filepath: resolvedPath,
+            filename: undefined, // remove the prev filename
         }, loadId);
         // return load
         return load;
@@ -1698,7 +1759,6 @@ class Expression {
             throw new WrapperYAMLException(BUG_MESSAGE);
         // get needed cache data
         const { blueprint } = cache;
-        console.debug("blueprint: ", blueprint);
         // update local values
         cache.localsVal.push(localsVal);
         try {
@@ -1878,7 +1938,7 @@ class Expression {
                 node = this._resolveUnknown(node, id, true, path);
             }
             // if node is not record throw
-            if (!this._isRecord(node))
+            if (!isRecord(node))
                 throw new WrapperYAMLException(`Invalid path in expression: ${path.join(".")}`);
             // if item is present in node update it and continue
             if (p in node) {
@@ -1921,7 +1981,7 @@ class Expression {
                 node = await this._resolveUnknownAsync(node, id, true, path);
             }
             // if node is not record throw
-            if (!this._isRecord(node))
+            if (!isRecord(node))
                 throw new WrapperYAMLException(`Invalid path in expression: ${path.join(".")}.`);
             // if item is present in node update it and continue
             if (p in node) {
@@ -1959,14 +2019,6 @@ class Expression {
             return false;
         val = val.trim();
         return val[0] === "$" && val[1] !== "$" && val[1] !== "{";
-    }
-    /**
-     * Method to check if value is an array or object (record that can contains other primative values).
-     * @param val - Value that will be checked.
-     * @returns Boolean that indicates if value is a record or not.
-     */
-    _isRecord(val) {
-        return typeof val === "object" && val !== null;
     }
 }
 
@@ -2052,9 +2104,12 @@ class ResolveHandler {
         // start actual handling
         try {
             // resolve
-            const resolved = this._resolveUnknown(blueprint, id, false);
-            // remove private and return value
-            return this._filterPrivate(resolved, id);
+            const privateLoad = this._resolveUnknown(blueprint, id, false);
+            // remove private nodes
+            const clonedLoad = deepClone(privateLoad);
+            const load = this._filterPrivate(clonedLoad, id);
+            //  and return value
+            return { load, privateLoad };
         }
         finally {
             this._resolveCache.delete(id);
@@ -2085,9 +2140,12 @@ class ResolveHandler {
         // start actual handling
         try {
             // resolve
-            const resolved = await this._resolveUnknownAsync(blueprint, id, false);
-            // remove private and return value
-            return this._filterPrivate(resolved, id);
+            const privateLoad = await this._resolveUnknownAsync(blueprint, id, false);
+            // remove private nodes
+            const clonedLoad = deepClone(privateLoad);
+            const load = this._filterPrivate(clonedLoad, id);
+            //  and return value
+            return { load, privateLoad };
         }
         finally {
             this._resolveCache.delete(id);
@@ -2440,7 +2498,7 @@ class ResolveHandler {
                 // get current part of the path
                 const p = path[i];
                 // if it's not a record then path is not true and just console a warning
-                if (!this._isRecord(node))
+                if (!isRecord(node))
                     break;
                 // in last iteraion delete the child based on the parent type
                 if (path.length - 1 === i) {
@@ -2473,14 +2531,6 @@ class ResolveHandler {
             }
         }
         return resolve;
-    }
-    /**
-     * Method to check if value is an array or object (record that can contains other primative values).
-     * @param val - Value that will be checked.
-     * @returns Boolean that indicates if value is a record or not.
-     */
-    _isRecord(val) {
-        return typeof val === "object" && val !== null;
     }
 }
 
@@ -2551,7 +2601,7 @@ function addModuleCache(loadId, str, filepath, blueprint, directives) {
     }
     ids.add(loadId);
 }
-function addLoadCache(filepath, params, load) {
+function addLoadCache(filepath, params, load, privateLoad) {
     // resolve filepath
     const resolvedPath = path.resolve(filepath);
     // get module cache
@@ -2561,7 +2611,7 @@ function addLoadCache(filepath, params, load) {
     // hash params
     const hashedParams = hashParams(params !== null && params !== void 0 ? params : {});
     // add load
-    moduleCache.loadByParamHash.set(hashedParams, { params, load });
+    moduleCache.loadByParamHash.set(hashedParams, { params, load, privateLoad });
 }
 /**
  * Function that checks if module's data are cached and return them, if not it returns undefined.
@@ -2709,25 +2759,31 @@ function load(str, opts) {
             cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
+            if (directives.filename)
+                handledOpts.filename = directives.filename;
         }
         else {
-            // execute string
             const val = handleNewModule(str, handledOpts, loadId);
             blueprint = val.blueprint;
             directives = val.directives;
+            if (val.filename)
+                handledOpts.filename = val.filename;
         }
         // check if load with params is present in the cache
         const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
         // if load is cached return it
-        if (cachedLoad !== undefined)
-            return cachedLoad.load;
+        if (cachedLoad !== undefined) {
+            const privateReturn = handlePrivateLoad(cachedLoad.load, cachedLoad.privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+            return privateReturn;
+        }
         // resolve blueprint and return
-        const load = resolveHandler.resolve(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
+        const { load, privateLoad } = resolveHandler.resolve(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
         // add load to the cache if filepath is supplied
         if (handledOpts.filepath)
-            addLoadCache(handledOpts.filepath, handledOpts.params, load);
-        // return load
-        return load;
+            addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
+        // handle private nodes and return
+        const privateReturn = handlePrivateLoad(load, privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+        return privateReturn;
     }
     catch (err) {
         // if error instance of WrapperYAMLException set additional data
@@ -2775,24 +2831,31 @@ async function loadAsync(str, opts) {
             cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
+            if (directives.filename)
+                handledOpts.filename = directives.filename;
         }
         else {
             const val = await handleNewModuleAsync(str, handledOpts, loadId);
             blueprint = val.blueprint;
             directives = val.directives;
+            if (val.filename)
+                handledOpts.filename = val.filename;
         }
         // check if load with params is present in the cache
         const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
         // if load is cached return it
-        if (cachedLoad !== undefined)
-            return cachedLoad.load;
+        if (cachedLoad !== undefined) {
+            const privateReturn = handlePrivateLoad(cachedLoad.load, cachedLoad.privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+            return privateReturn;
+        }
         // resolve blueprint and return
-        const load = await resolveHandler.resolveAsync(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
+        const { load, privateLoad } = await resolveHandler.resolveAsync(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
         // add load to the cache if filepath is supplied
         if (handledOpts.filepath)
-            addLoadCache(handledOpts.filepath, handledOpts.params, load);
-        // return load
-        return load;
+            addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
+        // handle private nodes and return
+        const privateReturn = handlePrivateLoad(load, privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+        return privateReturn;
     }
     catch (err) {
         // if error instance of WrapperYAMLException set additional data
@@ -2833,24 +2896,31 @@ function internalLoad(str, opts, loadId) {
             cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
+            if (directives.filename)
+                handledOpts.filename = directives.filename;
         }
         else {
             const val = handleNewModule(str, handledOpts, loadId);
             blueprint = val.blueprint;
             directives = val.directives;
+            if (val.filename)
+                handledOpts.filename = val.filename;
         }
         // check if load with params is present in the cache
         const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
         // if load is cached return it
-        if (cachedLoad !== undefined)
-            return cachedLoad.load;
+        if (cachedLoad !== undefined) {
+            const privateReturn = handlePrivateLoad(cachedLoad.load, cachedLoad.privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+            return privateReturn;
+        }
         // resolve blueprint and return
-        const load = resolveHandler.resolve(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
+        const { load, privateLoad } = resolveHandler.resolve(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
         // add load to the cache if filepath is supplied
         if (handledOpts.filepath)
-            addLoadCache(handledOpts.filepath, handledOpts.params, load);
-        // return load
-        return load;
+            addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
+        // handle private nodes and return
+        const privateReturn = handlePrivateLoad(load, privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+        return privateReturn;
     }
     catch (err) {
         // if error instance of WrapperYAMLException set additional data
@@ -2884,24 +2954,31 @@ async function internalLoadAsync(str, opts, loadId) {
             cachedModule.directives !== undefined) {
             blueprint = cachedModule.blueprint;
             directives = cachedModule.directives;
+            if (directives.filename)
+                handledOpts.filename = directives.filename;
         }
         else {
             const val = await handleNewModuleAsync(str, handledOpts, loadId);
             blueprint = val.blueprint;
             directives = val.directives;
+            if (val.filename)
+                handledOpts.filename = val.filename;
         }
         // check if load with params is present in the cache
         const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
         // if load is cached return it
-        if (cachedLoad !== undefined)
-            return cachedLoad.load;
+        if (cachedLoad !== undefined) {
+            const privateReturn = handlePrivateLoad(cachedLoad.load, cachedLoad.privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+            return privateReturn;
+        }
         // resolve blueprint and return
-        const load = await resolveHandler.resolveAsync(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
+        const { load, privateLoad } = await resolveHandler.resolveAsync(handledOpts.filepath, blueprint, directives, (_a = handledOpts.params) !== null && _a !== void 0 ? _a : {}, loadId, handledOpts);
         // add load to the cache if filepath is supplied
         if (handledOpts.filepath)
-            addLoadCache(handledOpts.filepath, handledOpts.params, load);
-        // return load
-        return load;
+            addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
+        // handle private nodes and return
+        const privateReturn = handlePrivateLoad(load, privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
+        return privateReturn;
     }
     catch (err) {
         // if error instance of WrapperYAMLException set additional data
@@ -2926,15 +3003,18 @@ function handleOpts(opts) {
         : process.cwd();
     const filepath = (opts === null || opts === void 0 ? void 0 : opts.filepath) && path.resolve(basePath, opts.filepath);
     const params = (_a = opts === null || opts === void 0 ? void 0 : opts.params) !== null && _a !== void 0 ? _a : {};
+    const ignorePrivate = (opts === null || opts === void 0 ? void 0 : opts.ignorePrivate) &&
+        (opts.ignorePrivate === "current" ? opts.filename : opts.ignorePrivate);
     return {
         ...opts,
         basePath,
         params,
         filepath,
+        ignorePrivate,
     };
 }
 /**
- * Method to read file from file system directly if str passed to load function was a path url or filepath passed without str. works sync.
+ * Function to read file from file system directly if str passed to load function was a path url or filepath passed without str. works sync.
  * @param opts - Load options object.
  * @returns Read YAML string.
  */
@@ -2948,7 +3028,7 @@ function rootFileRead(opts) {
     return readFile(resolvedPath, opts.basePath, opts);
 }
 /**
- * Method to read file from file system directly if str passed to load function was a path url or filepath passed without str. works async.
+ * Function to read file from file system directly if str passed to load function was a path url or filepath passed without str. works async.
  * @param opts - Load options object.
  * @returns Read YAML string.
  */
@@ -2974,13 +3054,14 @@ function handleNewModule(str, opts, loadId) {
     const val = executeStr(str, opts, loadId);
     const blueprint = val.blueprint;
     const directives = val.directives;
+    const filename = directives.filename;
     // resolve with undefined params and add load to the cache if filepath is supplied
     if (opts.filepath) {
-        const load = resolveHandler.resolve(opts.filepath, blueprint, directives, {}, loadId, opts);
-        addLoadCache(opts.filepath, opts.params, load);
+        const { load, privateLoad } = resolveHandler.resolve(opts.filepath, blueprint, directives, {}, loadId, opts);
+        addLoadCache(opts.filepath, opts.params, load, privateLoad);
     }
     // return blueprint and directives object
-    return { blueprint, directives };
+    return { blueprint, directives, filename };
 }
 /**
  * Function to handle new YAML file that hasn't been loaded before by creating module cache with blueprint for it. it also resolve the blueprint with empty params
@@ -2995,13 +3076,14 @@ async function handleNewModuleAsync(str, opts, loadId) {
     const val = await executeStrAsync(str, opts, loadId);
     const blueprint = val.blueprint;
     const directives = val.directives;
+    const filename = directives.filename;
     // resolve with undefined params
-    const load = await resolveHandler.resolveAsync(opts.filepath, blueprint, directives, {}, loadId, opts);
+    const { load, privateLoad } = await resolveHandler.resolveAsync(opts.filepath, blueprint, directives, {}, loadId, opts);
     // add load to the cache if filepath is supplied
     if (opts.filepath)
-        addLoadCache(opts.filepath, opts.params, load);
+        addLoadCache(opts.filepath, opts.params, load, privateLoad);
     // return blueprint and directives object
-    return { blueprint, directives };
+    return { blueprint, directives, filename };
 }
 /**
  * Method to start handling the str by converting it to js-yaml compatible string and converting wrapper classes into js-yaml classes. it also convert the raw load
@@ -3250,7 +3332,8 @@ class Debouncer {
  */
 class LiveLoader {
     /**
-     * @param opts - Options object passed to control live loader behavior.
+     * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
+     * per module options here.
      */
     constructor(opts) {
         /** @internal - implementation detail, not part of public API */
@@ -3270,7 +3353,8 @@ class LiveLoader {
     }
     /**
      * Method to set options of the class.
-     * @param opts - Options object passed to control live loader behavior.
+     * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
+     * per module options here.
      */
     setOptions(opts) {
         this._liveLoaderOpts = { ...this._liveLoaderOpts, ...opts };
@@ -3282,10 +3366,10 @@ class LiveLoader {
      * imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled
      * as sync functions and will not be awaited.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param params - Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
+     * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
      * @returns Value of loaded YAML file.
      */
-    addModule(path, params) {
+    addModule(path, opts) {
         var _a, _b, _c, _d;
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
@@ -3296,7 +3380,7 @@ class LiveLoader {
         const str = readFile(resolvedPath, this._liveLoaderOpts.basePath, this._liveLoaderOpts);
         try {
             // load str
-            const load = internalLoad(str, { ...this._liveLoaderOpts, params, filepath: resolvedPath }, this._liveLoaderId);
+            const load = internalLoad(str, { ...opts, ...this._liveLoaderOpts, filepath: resolvedPath }, this._liveLoaderId);
             // check cache using loadId to get paths utilized by the live loader
             const paths = loadIdsToModules.get(this._liveLoaderId);
             // if no paths return load directly
@@ -3326,10 +3410,10 @@ class LiveLoader {
      * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported
      * YAML files in the read YAML string are watched as well. works async so all file watch, reads are async and tags executions will be awaited.
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param params - Object of module params aliases and there values to be used in this load.
+     * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
      * @returns Value of loaded YAML file.
      */
-    async addModuleAsync(path, params) {
+    async addModuleAsync(path, opts) {
         var _a, _b, _c, _d;
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
@@ -3340,7 +3424,7 @@ class LiveLoader {
         const str = await readFileAsync(resolvedPath, this._liveLoaderOpts.basePath, this._liveLoaderOpts);
         try {
             // load str
-            const load = await internalLoadAsync(str, { ...this._liveLoaderOpts, params, filepath: resolvedPath }, this._liveLoaderId);
+            const load = await internalLoadAsync(str, { ...opts, ...this._liveLoaderOpts, filepath: resolvedPath }, this._liveLoaderId);
             // check cache using loadId to get paths utilized by the live loader
             const paths = loadIdsToModules.get(this._liveLoaderId);
             // if no paths return load directly
@@ -3369,26 +3453,44 @@ class LiveLoader {
     /**
      * Method to get cached value of loaded module or file. note that value retuned is module's resolve when params is undefined (default params value are used).
      * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+     * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for this module.
      * @returns Cached value of YAML file with default modules params or undefined if file is not loaded.
      */
-    getModule(path) {
+    getModule(path, ignorePrivate) {
         var _a;
         // get resolved path
         const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath);
-        return (_a = getLoadCache(resolvedPath, undefined)) === null || _a === void 0 ? void 0 : _a.load;
+        // get filename
+        const cache = getModuleCache(resolvedPath);
+        const filename = (_a = cache === null || cache === void 0 ? void 0 : cache.directives) === null || _a === void 0 ? void 0 : _a.filename;
+        // get cached loads
+        const cachedLoads = getLoadCache(resolvedPath, undefined);
+        if (!cachedLoads)
+            return undefined;
+        // if ignorePrivate is defined, handle return load based on it
+        if (ignorePrivate !== undefined) {
+            if (ignorePrivate)
+                return cachedLoads.privateLoad;
+            else
+                return cachedLoads.load;
+        }
+        // Execute privateLoad to define which load to return
+        const privateLoad = handlePrivateLoad(cachedLoads.load, cachedLoads.privateLoad, filename, this._liveLoaderOpts.ignorePrivate);
+        return privateLoad;
     }
     /**
      * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when params is undefined (default params value are used).
+     * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for all modules.
      * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
      */
-    getAllModules() {
+    getAllModules(ignorePrivate) {
         // check cache using loadId to get paths utilized by the live loader
         const paths = loadIdsToModules.get(this._liveLoaderId);
         if (!paths)
             return {};
         let modules = {};
         for (const p of paths)
-            modules[p] = this.getModule(p);
+            modules[p] = this.getModule(p, ignorePrivate);
         return modules;
     }
     /**

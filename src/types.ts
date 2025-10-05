@@ -162,6 +162,9 @@ export type ParamLoadEntry = {
 
   /** Final resolved value returned after parsing/loading the YAML module. */
   load: unknown;
+
+  /** Final resolved value returned after parsing/loading the YAML module. but with keeping the private nodes. */
+  privateLoad: unknown;
 };
 
 /**
@@ -255,6 +258,14 @@ export interface LoadOptions {
   /** Mapping of module param aliases to string values that will be used to resolve %PARAM declarations in the module. Loader-supplied params should override any defaults declared with %PARAM. */
   params?: Record<string, string> | undefined;
 
+  /**
+   * Controls which modules' private node definitions are ignored from the final output, Allowed values:
+   *  - "all" — ignore private definitions in all loaded modules.
+   *  - "current" — ignore private definitions only in the current entry-point module.
+   *  - string[] — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
+   */
+  ignorePrivate?: "all" | "current" | string[];
+
   /** String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used. */
   filename?: string | undefined;
 
@@ -277,6 +288,7 @@ export type HandledLoadOpts = {
   unsafe?: boolean | undefined;
   filepath?: string | undefined;
   params: Record<string, string>;
+  ignorePrivate: "all" | string | string[] | undefined;
   filename?: string | undefined;
   onWarning?(this: null, e: YAMLException | WrapperYAMLException): void;
   schema?: Schema | undefined;
@@ -340,10 +352,7 @@ export type ResolveOptions = LoadOptions &
   };
 
 /** Options object passed to control liveLoader behavior. */
-export type LiveLoaderOptions = Omit<
-  LoadOptions,
-  "filename" | "filepath" | "params"
-> & {
+export type LiveLoaderOptions = LoadOptions & {
   /**
    * Function to call when a watcher detect file change.
    * @param path - Path of updated YAML file.

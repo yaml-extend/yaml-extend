@@ -11,6 +11,7 @@ import {
 import { BlueprintInstance } from "../lazyLoadClasses/blueprintInstance.js";
 import { ImportHandler } from "./import.js";
 import { tokenizer } from "../tokenizer.js";
+import { isRecord } from "../../helpers.js";
 
 /** Message that will be sent if an error occured during resolving that should not happen. */
 const BUG_MESSAGE = `Error while resolving, contact us about this error as it's most propably a bug.`;
@@ -312,8 +313,6 @@ export class Expression {
     // get needed cache data
     const { blueprint } = cache;
 
-    console.debug("blueprint: ", blueprint);
-
     // update local values
     cache.localsVal.push(localsVal);
 
@@ -551,7 +550,7 @@ export class Expression {
       }
 
       // if node is not record throw
-      if (!this._isRecord(node))
+      if (!isRecord(node))
         throw new WrapperYAMLException(
           `Invalid path in expression: ${path.join(".")}`
         );
@@ -609,7 +608,7 @@ export class Expression {
       }
 
       // if node is not record throw
-      if (!this._isRecord(node))
+      if (!isRecord(node))
         throw new WrapperYAMLException(
           `Invalid path in expression: ${path.join(".")}.`
         );
@@ -654,14 +653,5 @@ export class Expression {
     if (typeof val !== "string") return false;
     (val as string) = val.trim();
     return val[0] === "$" && val[1] !== "$" && val[1] !== "{";
-  }
-
-  /**
-   * Method to check if value is an array or object (record that can contains other primative values).
-   * @param val - Value that will be checked.
-   * @returns Boolean that indicates if value is a record or not.
-   */
-  private _isRecord(val: unknown): val is Record<string, unknown> {
-    return typeof val === "object" && val !== null;
   }
 }

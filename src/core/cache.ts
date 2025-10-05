@@ -94,7 +94,8 @@ export function addModuleCache(
 export function addLoadCache(
   filepath: string,
   params: Record<string, string> | undefined,
-  load: unknown
+  load: unknown,
+  privateLoad: unknown
 ) {
   // resolve filepath
   const resolvedPath = resolve(filepath);
@@ -107,7 +108,7 @@ export function addLoadCache(
   const hashedParams = hashParams(params ?? {});
 
   // add load
-  moduleCache.loadByParamHash.set(hashedParams, { params, load });
+  moduleCache.loadByParamHash.set(hashedParams, { params, load, privateLoad });
 }
 
 /**

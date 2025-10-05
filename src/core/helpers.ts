@@ -215,3 +215,67 @@ export function getClosingChar(
   // if no closing at depth zero return -1
   return -1;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Random helpers.
+/**
+ * Method to check if value is an array or object (record that can contains other primative values).
+ * @param val - Value that will be checked.
+ * @returns Boolean that indicates if value is a record or not.
+ */
+export function isRecord(val: unknown): val is Record<string, unknown> {
+  return typeof val === "object" && val !== null;
+}
+
+// deep-clone the input so we don't mutate the original
+export function deepClone(value: unknown): unknown {
+  // prefer structuredClone if available (native deep clone)
+  if (typeof (globalThis as any).structuredClone === "function") {
+    return (globalThis as any).structuredClone(value);
+  }
+
+  // fallback recursive clone that respects records/arrays using isRecord
+  const cloneRec = (v: unknown): unknown => {
+    if (!isRecord(v)) return v;
+    if (Array.isArray(v)) {
+      const arr: unknown[] = [];
+      for (let i = 0; i < (v as any).length; i++) {
+        arr[i] = cloneRec((v as any)[i]);
+      }
+      return arr;
+    } else {
+      const out: Record<string, unknown> = {};
+      for (const k in v as any) {
+        if (Object.prototype.hasOwnProperty.call(v as any, k)) {
+          out[k] = cloneRec((v as any)[k]);
+        }
+      }
+      return out;
+    }
+  };
+
+  return cloneRec(value);
+}
+
+/**
+ * Function to allow ignore private load on specific module.
+ * @param load - Load after removing private loads.
+ * @param privateLoad - Load with private nodes still present.
+ * @param opts - Options object passed to the loader.
+ * @returns Either load or privateLoad if file defined to ignore private nodes.
+ */
+export function handlePrivateLoad(
+  load: unknown,
+  privateLoad: unknown,
+  filename: string | undefined,
+  ignorePrivate: "all" | string | string[] | undefined
+) {
+  // if ignore private not defined return privateLoad directly
+  if (ignorePrivate === undefined) return load;
+  // if all modules defined to ignore private return fullLoad directly
+  if (ignorePrivate === "all") return privateLoad;
+  // return fullLoad only if filename matches the name of ignores files
+  if (filename && ignorePrivate.includes(filename)) return privateLoad;
+  // return privateLoad as default
+  return load;
+}

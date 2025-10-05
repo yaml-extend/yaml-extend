@@ -20,6 +20,7 @@ import {
   readFileAsync,
   resolvePath,
   generateId,
+  handlePrivateLoad,
 } from "../helpers.js";
 import type { WatchEventType } from "fs";
 import { circularDepClass } from "../circularDep.js";
@@ -45,7 +46,8 @@ export class LiveLoader {
   private _liveLoaderId: string = generateId();
 
   /**
-   * @param opts - Options object passed to control live loader behavior.
+   * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
+   * per module options here.
    */
   constructor(opts?: LiveLoaderOptions) {
     if (opts) this.setOptions(opts);
@@ -53,7 +55,8 @@ export class LiveLoader {
 
   /**
    * Method to set options of the class.
-   * @param opts - Options object passed to control live loader behavior.
+   * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
+   * per module options here.
    */
   setOptions(opts: LiveLoaderOptions) {
     this._liveLoaderOpts = { ...this._liveLoaderOpts, ...opts };
@@ -66,10 +69,10 @@ export class LiveLoader {
    * imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled
    * as sync functions and will not be awaited.
    * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-   * @param params - Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
+   * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
    * @returns Value of loaded YAML file.
    */
-  addModule(path: string, params?: Record<string, string>): unknown {
+  addModule(path: string, opts?: LiveLoaderOptions): unknown {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
     // add module to watch
@@ -86,7 +89,7 @@ export class LiveLoader {
       // load str
       const load = internalLoad(
         str,
-        { ...this._liveLoaderOpts, params, filepath: resolvedPath },
+        { ...opts, ...this._liveLoaderOpts, filepath: resolvedPath },
         this._liveLoaderId
       );
       // check cache using loadId to get paths utilized by the live loader
@@ -118,12 +121,12 @@ export class LiveLoader {
    * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported
    * YAML files in the read YAML string are watched as well. works async so all file watch, reads are async and tags executions will be awaited.
    * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-   * @param params - Object of module params aliases and there values to be used in this load.
+   * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
    * @returns Value of loaded YAML file.
    */
   async addModuleAsync(
     path: string,
-    params?: Record<string, string>
+    opts?: LiveLoaderOptions
   ): Promise<unknown> {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
@@ -141,7 +144,7 @@ export class LiveLoader {
       // load str
       const load = await internalLoadAsync(
         str,
-        { ...this._liveLoaderOpts, params, filepath: resolvedPath },
+        { ...opts, ...this._liveLoaderOpts, filepath: resolvedPath },
         this._liveLoaderId
       );
       // check cache using loadId to get paths utilized by the live loader
@@ -172,24 +175,48 @@ export class LiveLoader {
   /**
    * Method to get cached value of loaded module or file. note that value retuned is module's resolve when params is undefined (default params value are used).
    * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+   * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for this module.
    * @returns Cached value of YAML file with default modules params or undefined if file is not loaded.
    */
-  getModule(path: string): unknown | undefined {
+  getModule(path: string, ignorePrivate?: boolean): unknown | undefined {
     // get resolved path
     const resolvedPath = resolvePath(path, this._liveLoaderOpts.basePath!);
-    return getLoadCache(resolvedPath, undefined)?.load;
+
+    // get filename
+    const cache = getModuleCache(resolvedPath);
+    const filename = cache?.directives?.filename;
+
+    // get cached loads
+    const cachedLoads = getLoadCache(resolvedPath, undefined);
+    if (!cachedLoads) return undefined;
+    // if ignorePrivate is defined, handle return load based on it
+    if (ignorePrivate !== undefined) {
+      if (ignorePrivate) return cachedLoads.privateLoad;
+      else return cachedLoads.load;
+    }
+
+    // Execute privateLoad to define which load to return
+    const privateLoad = handlePrivateLoad(
+      cachedLoads.load,
+      cachedLoads.privateLoad,
+      filename,
+      this._liveLoaderOpts.ignorePrivate
+    );
+    return privateLoad;
   }
 
   /**
    * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when params is undefined (default params value are used).
+   * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for all modules.
    * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
    */
-  getAllModules(): Record<string, unknown> {
+  getAllModules(ignorePrivate?: boolean): Record<string, unknown> {
     // check cache using loadId to get paths utilized by the live loader
     const paths = loadIdsToModules.get(this._liveLoaderId);
     if (!paths) return {};
     let modules: Record<string, unknown> = {};
-    for (const p of paths) modules[p] = this.getModule(p) as unknown;
+    for (const p of paths)
+      modules[p] = this.getModule(p, ignorePrivate) as unknown;
     return modules;
   }
 

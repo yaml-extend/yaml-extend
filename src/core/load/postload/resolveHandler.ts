@@ -9,7 +9,12 @@ import type {
   InternalLoadAsync,
 } from "../../../types.js";
 import { BlueprintInstance } from "../lazyLoadClasses/blueprintInstance.js";
-import { generateId, getClosingChar } from "../../helpers.js";
+import {
+  generateId,
+  getClosingChar,
+  isRecord,
+  deepClone,
+} from "../../helpers.js";
 import { tokenizer } from "../tokenizer.js";
 
 /**
@@ -102,7 +107,7 @@ export class ResolveHandler {
     params: Record<string, string>,
     loadId: string,
     opts: HandledLoadOpts
-  ): unknown {
+  ): { load: unknown; privateLoad: unknown } {
     // generate id by concatinating loadId with resolved path or random id to uniquely identify this resolve
     const id = `${loadId}_${path ?? generateId()}`;
 
@@ -119,9 +124,12 @@ export class ResolveHandler {
     // start actual handling
     try {
       // resolve
-      const resolved = this._resolveUnknown(blueprint, id, false);
-      // remove private and return value
-      return this._filterPrivate(resolved, id);
+      const privateLoad = this._resolveUnknown(blueprint, id, false);
+      // remove private nodes
+      const clonedLoad = deepClone(privateLoad);
+      const load = this._filterPrivate(clonedLoad, id);
+      //  and return value
+      return { load, privateLoad };
     } finally {
       this._resolveCache.delete(id);
     }
@@ -144,7 +152,7 @@ export class ResolveHandler {
     params: Record<string, string>,
     loadId: string,
     opts: HandledLoadOpts
-  ): Promise<unknown> {
+  ): Promise<{ load: unknown; privateLoad: unknown }> {
     // generate id by concatinating loadId with resolved path or random id to uniquely identify this resolve
     const id = `${loadId}_${path ?? generateId()}`;
 
@@ -161,9 +169,12 @@ export class ResolveHandler {
     // start actual handling
     try {
       // resolve
-      const resolved = await this._resolveUnknownAsync(blueprint, id, false);
-      // remove private and return value
-      return this._filterPrivate(resolved, id);
+      const privateLoad = await this._resolveUnknownAsync(blueprint, id, false);
+      // remove private nodes
+      const clonedLoad = deepClone(privateLoad);
+      const load = this._filterPrivate(clonedLoad, id);
+      //  and return value
+      return { load, privateLoad };
     } finally {
       this._resolveCache.delete(id);
     }
@@ -643,7 +654,7 @@ export class ResolveHandler {
         const p = path[i];
 
         // if it's not a record then path is not true and just console a warning
-        if (!this._isRecord(node)) break;
+        if (!isRecord(node)) break;
 
         // in last iteraion delete the child based on the parent type
         if (path.length - 1 === i) {
@@ -677,14 +688,5 @@ export class ResolveHandler {
     }
 
     return resolve;
-  }
-
-  /**
-   * Method to check if value is an array or object (record that can contains other primative values).
-   * @param val - Value that will be checked.
-   * @returns Boolean that indicates if value is a record or not.
-   */
-  private _isRecord(val: unknown): val is Record<string, unknown> {
-    return typeof val === "object" && val !== null;
   }
 }

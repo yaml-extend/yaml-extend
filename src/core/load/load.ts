@@ -17,6 +17,7 @@ import {
   readFileAsync,
   resolvePath,
   generateId,
+  handlePrivateLoad,
 } from "../helpers.js";
 import {
   getModuleCache,
@@ -100,21 +101,30 @@ export function load(str: string, opts?: LoadOptions): unknown {
     ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
+      if (directives.filename) handledOpts.filename = directives.filename;
     } else {
-      // execute string
       const val = handleNewModule(str, handledOpts, loadId);
       blueprint = val.blueprint;
       directives = val.directives;
+      if (val.filename) handledOpts.filename = val.filename;
     }
 
     // check if load with params is present in the cache
     const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
-    if (cachedLoad !== undefined) return cachedLoad.load;
+    if (cachedLoad !== undefined) {
+      const privateReturn = handlePrivateLoad(
+        cachedLoad.load,
+        cachedLoad.privateLoad,
+        handledOpts.filename,
+        handledOpts.ignorePrivate
+      );
+      return privateReturn;
+    }
 
     // resolve blueprint and return
-    const load = resolveHandler.resolve(
+    const { load, privateLoad } = resolveHandler.resolve(
       handledOpts.filepath,
       blueprint,
       directives,
@@ -125,10 +135,16 @@ export function load(str: string, opts?: LoadOptions): unknown {
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.params, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
 
-    // return load
-    return load;
+    // handle private nodes and return
+    const privateReturn = handlePrivateLoad(
+      load,
+      privateLoad,
+      handledOpts.filename,
+      handledOpts.ignorePrivate
+    );
+    return privateReturn;
   } catch (err) {
     // if error instance of WrapperYAMLException set additional data
     if (err instanceof WrapperYAMLException)
@@ -187,20 +203,30 @@ export async function loadAsync(
     ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
+      if (directives.filename) handledOpts.filename = directives.filename;
     } else {
       const val = await handleNewModuleAsync(str, handledOpts, loadId);
       blueprint = val.blueprint;
       directives = val.directives;
+      if (val.filename) handledOpts.filename = val.filename;
     }
 
     // check if load with params is present in the cache
     const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
-    if (cachedLoad !== undefined) return cachedLoad.load;
+    if (cachedLoad !== undefined) {
+      const privateReturn = handlePrivateLoad(
+        cachedLoad.load,
+        cachedLoad.privateLoad,
+        handledOpts.filename,
+        handledOpts.ignorePrivate
+      );
+      return privateReturn;
+    }
 
     // resolve blueprint and return
-    const load = await resolveHandler.resolveAsync(
+    const { load, privateLoad } = await resolveHandler.resolveAsync(
       handledOpts.filepath,
       blueprint,
       directives,
@@ -211,10 +237,16 @@ export async function loadAsync(
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.params, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
 
-    // return load
-    return load;
+    // handle private nodes and return
+    const privateReturn = handlePrivateLoad(
+      load,
+      privateLoad,
+      handledOpts.filename,
+      handledOpts.ignorePrivate
+    );
+    return privateReturn;
   } catch (err) {
     // if error instance of WrapperYAMLException set additional data
     if (err instanceof WrapperYAMLException)
@@ -262,20 +294,30 @@ export function internalLoad(
     ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
+      if (directives.filename) handledOpts.filename = directives.filename;
     } else {
       const val = handleNewModule(str, handledOpts, loadId);
       blueprint = val.blueprint;
       directives = val.directives;
+      if (val.filename) handledOpts.filename = val.filename;
     }
 
     // check if load with params is present in the cache
     const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
-    if (cachedLoad !== undefined) return cachedLoad.load;
+    if (cachedLoad !== undefined) {
+      const privateReturn = handlePrivateLoad(
+        cachedLoad.load,
+        cachedLoad.privateLoad,
+        handledOpts.filename,
+        handledOpts.ignorePrivate
+      );
+      return privateReturn;
+    }
 
     // resolve blueprint and return
-    const load = resolveHandler.resolve(
+    const { load, privateLoad } = resolveHandler.resolve(
       handledOpts.filepath,
       blueprint,
       directives,
@@ -286,10 +328,16 @@ export function internalLoad(
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.params, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
 
-    // return load
-    return load;
+    // handle private nodes and return
+    const privateReturn = handlePrivateLoad(
+      load,
+      privateLoad,
+      handledOpts.filename,
+      handledOpts.ignorePrivate
+    );
+    return privateReturn;
   } catch (err) {
     // if error instance of WrapperYAMLException set additional data
     if (err instanceof WrapperYAMLException)
@@ -331,20 +379,30 @@ export async function internalLoadAsync(
     ) {
       blueprint = cachedModule.blueprint;
       directives = cachedModule.directives;
+      if (directives.filename) handledOpts.filename = directives.filename;
     } else {
       const val = await handleNewModuleAsync(str, handledOpts, loadId);
       blueprint = val.blueprint;
       directives = val.directives;
+      if (val.filename) handledOpts.filename = val.filename;
     }
 
     // check if load with params is present in the cache
     const cachedLoad = getLoadCache(handledOpts.filepath, handledOpts.params);
 
     // if load is cached return it
-    if (cachedLoad !== undefined) return cachedLoad.load;
+    if (cachedLoad !== undefined) {
+      const privateReturn = handlePrivateLoad(
+        cachedLoad.load,
+        cachedLoad.privateLoad,
+        handledOpts.filename,
+        handledOpts.ignorePrivate
+      );
+      return privateReturn;
+    }
 
     // resolve blueprint and return
-    const load = await resolveHandler.resolveAsync(
+    const { load, privateLoad } = await resolveHandler.resolveAsync(
       handledOpts.filepath,
       blueprint,
       directives,
@@ -355,10 +413,16 @@ export async function internalLoadAsync(
 
     // add load to the cache if filepath is supplied
     if (handledOpts.filepath)
-      addLoadCache(handledOpts.filepath, handledOpts.params, load);
+      addLoadCache(handledOpts.filepath, handledOpts.params, load, privateLoad);
 
-    // return load
-    return load;
+    // handle private nodes and return
+    const privateReturn = handlePrivateLoad(
+      load,
+      privateLoad,
+      handledOpts.filename,
+      handledOpts.ignorePrivate
+    );
+    return privateReturn;
   } catch (err) {
     // if error instance of WrapperYAMLException set additional data
     if (err instanceof WrapperYAMLException)
@@ -382,16 +446,20 @@ function handleOpts(opts: LoadOptions | undefined): HandledLoadOpts {
     : process.cwd();
   const filepath = opts?.filepath && resolve(basePath, opts.filepath);
   const params = opts?.params ?? {};
+  const ignorePrivate =
+    opts?.ignorePrivate &&
+    (opts.ignorePrivate === "current" ? opts.filename : opts.ignorePrivate);
   return {
     ...opts,
     basePath,
     params,
     filepath,
+    ignorePrivate,
   } as HandledLoadOpts;
 }
 
 /**
- * Method to read file from file system directly if str passed to load function was a path url or filepath passed without str. works sync.
+ * Function to read file from file system directly if str passed to load function was a path url or filepath passed without str. works sync.
  * @param opts - Load options object.
  * @returns Read YAML string.
  */
@@ -408,7 +476,7 @@ function rootFileRead(opts: HandledLoadOpts): string {
 }
 
 /**
- * Method to read file from file system directly if str passed to load function was a path url or filepath passed without str. works async.
+ * Function to read file from file system directly if str passed to load function was a path url or filepath passed without str. works async.
  * @param opts - Load options object.
  * @returns Read YAML string.
  */
@@ -436,14 +504,19 @@ function handleNewModule(
   str: string,
   opts: HandledLoadOpts,
   loadId: string
-): { blueprint: unknown; directives: DirectivesObj } {
+): {
+  blueprint: unknown;
+  directives: DirectivesObj;
+  filename: string | undefined;
+} {
   // execute string
   const val = executeStr(str, opts, loadId);
   const blueprint = val.blueprint;
   const directives = val.directives;
+  const filename = directives.filename;
   // resolve with undefined params and add load to the cache if filepath is supplied
   if (opts.filepath) {
-    const load = resolveHandler.resolve(
+    const { load, privateLoad } = resolveHandler.resolve(
       opts.filepath,
       blueprint,
       directives,
@@ -451,10 +524,10 @@ function handleNewModule(
       loadId,
       opts
     );
-    addLoadCache(opts.filepath, opts.params, load);
+    addLoadCache(opts.filepath, opts.params, load, privateLoad);
   }
   // return blueprint and directives object
-  return { blueprint, directives };
+  return { blueprint, directives, filename };
 }
 
 /**
@@ -469,13 +542,18 @@ async function handleNewModuleAsync(
   str: string,
   opts: HandledLoadOpts,
   loadId: string
-): Promise<{ blueprint: unknown; directives: DirectivesObj }> {
+): Promise<{
+  blueprint: unknown;
+  directives: DirectivesObj;
+  filename: string | undefined;
+}> {
   // execute string
   const val = await executeStrAsync(str, opts, loadId);
   const blueprint = val.blueprint;
   const directives = val.directives;
+  const filename = directives.filename;
   // resolve with undefined params
-  const load = await resolveHandler.resolveAsync(
+  const { load, privateLoad } = await resolveHandler.resolveAsync(
     opts.filepath,
     blueprint,
     directives,
@@ -484,9 +562,10 @@ async function handleNewModuleAsync(
     opts
   );
   // add load to the cache if filepath is supplied
-  if (opts.filepath) addLoadCache(opts.filepath, opts.params, load);
+  if (opts.filepath)
+    addLoadCache(opts.filepath, opts.params, load, privateLoad);
   // return blueprint and directives object
-  return { blueprint, directives };
+  return { blueprint, directives, filename };
 }
 
 /**
@@ -515,7 +594,7 @@ function executeStr(
   for (const imp of directives.importsMap.values()) {
     const params = imp.params;
     const path = imp.path;
-    internalLoad(path, { ...opts, params }, loadId);
+    internalLoad(path, { ...(opts as LoadOptions), params }, loadId);
   }
 
   // handle tags by fetching them then converting them to wrapper types
@@ -572,7 +651,7 @@ async function executeStrAsync(
   for (const imp of directives.importsMap.values()) {
     const params = imp.params;
     const path = imp.path;
-    await internalLoadAsync(path, { ...opts, params }, loadId);
+    await internalLoadAsync(path, { ...(opts as LoadOptions), params }, loadId);
   }
 
   // handle tags by fetching them then converting them to wrapper types

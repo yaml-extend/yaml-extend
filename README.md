@@ -1103,31 +1103,33 @@ Class that handles loading multiple YAML files at the same time while watching l
 
 - `constructor(opts?: LiveLoaderOptions)` — See [`LiveLoaderOptions`](#liveloaderoptions)
   LiveLoader class constructor.
-  `opts`: Options object passed to control live loader behavior.
+  `opts`: Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and per module options here.
 
 - `setOptions(opts: LiveLoaderOptions) => void` — See [`LiveLoaderOptions`](#liveloaderoptions)
   Method to set options of the class.
-  `opts`: Options object passed to control live loader behavior.
+  `opts`: Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and per module options here.
 
-- `addModule(path: string, params?: Record<string, string>) => unknown`
+- `addModule(path: string, opt?: LiveLoaderOptions) => unknown`
   Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled as sync functions and will not be awaited.
   `path`: Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-  `params`: Object of module params aliases and there values to be used in this load. so it's almost always better to use addModuleAsync instead.
+  `opt`: Options object passed to control live loader behavior. overwrites default options defined for loader.
   `returns`: Value of loaded YAML file.
 
-- `addModuleAsync(path: string, params?: Record<string, string>) => unknown`
+- `addModuleAsync(path: string, opt?: LiveLoaderOptions) => unknown`
   Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that imported YAML files in the read YAML string are watched as well. works async so all file watch, reads are async and tags executions will be awaited.
   `path`: Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-  `params`: Object of module params aliases and there values to be used in this load.
+  `opt`: Options object passed to control live loader behavior. overwrites default options defined for loader.
   `returns`: Value of loaded YAML file.
 
-- `getModule(path: string) => unknown`
+- `getModule(path: string, ignorePrivate?: boolean) => unknown`
   Method to get cached value of loaded module or file. note that value retuned is module's resolve when params is undefined (default params value are used).
   `path`: Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
+  `ignorePrivate`: Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for this module.
   `returns`: Cached value of YAML file with default modules params or undefined if file is not loaded.
 
-- `getAllModules() => Record<string, unknown>`
+- `getAllModules(ignorePrivate?: boolean) => Record<string, unknown>`
   Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when params is undefined (default params value are used).
+  `ignorePrivate`: Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for all modules.
   `returns`: Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
 
 - `getCache(path: string) => ModuleLoadCache` see [Caching](#caching-concise)
@@ -1260,6 +1262,13 @@ Options object passed to control load behavior. basePath, filpath and params are
 - `unsafe?: boolean | undefined` — Default: `false`
   Boolean to disable basePath black boxing. it's not recommend to set it to true unless you have strong reason.
 
+- `ignorePrivate?: "all" | "current" | string[] | undefined` — Default: `undefined`
+  Controls which modules' private node definitions are ignored from the final output, Allowed values:
+
+  - `all` — ignore private definitions in `all` loaded modules.
+  - `current` — ignore private definitions only in the current entry-point module.
+  - `string[]` — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
+
 - `filepath?: string | undefined` — Default: `undefined`
   The resolved path of the YAML source. Useful for error messages, caching, and resolving relative imports. If you call `load("./file.yaml")` the loader should set this to the resolved absolute path automatically. `Note that imports and caching will not work if filepath is not supplied here or in function's str field`.
 
@@ -1360,6 +1369,21 @@ Options object passed to control liveLoader behavior.
 - `unsafe?: boolean | undefined` — Default: `false`
   Boolean to disable basePath black boxing. it's not recommend to set it to true unless you have strong reason.
 
+- `ignorePrivate?: "all" | "current" | string[] | undefined` — Default: `undefined`
+  Controls which modules' private node definitions are ignored from the final output, Allowed values:
+
+  - `all` — ignore private definitions in `all` loaded modules.
+  - `current` — ignore private definitions only in the current entry-point module.
+  - `string[]` — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
+
+- `filepath?: string | undefined` — Default: `undefined`
+  Default filepath to use, can be overriden in `addModule` and `getModule` methods.
+  The resolved path of the YAML source. Useful for error messages, caching, and resolving relative imports. If you call `load("./file.yaml")` the loader should set this to the resolved absolute path automatically. `Note that imports and caching will not work if filepath is not supplied here or in function's str field`.
+
+- `filename?: string | undefined` — Default: `undefined`
+  Default filename to use, can be overriden in `addModule` and `getModule` methods.
+  String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used.
+
 - `onWarning?: (this: null, err: YAMLException | WrapperYAMLException) => void` — Default: `undefined` — see [`YAMLException`](#yamlexception) / [`WrapperYAMLException`](#wrapperyamlexception)
   Function to call on warning messages.
   `err`: Error thrown either YAMLException or WrapperYAMLException.
@@ -1374,6 +1398,10 @@ Options object passed to control liveLoader behavior.
   Listener for parse events.
   `eventType`: Type of the parse event. either "close" or "open".
   `state`: State of the current parse.
+
+- `params?: Record<string, string> | undefined` — Default: `undefined`
+  Default params to use, can be overriden in `addModule` and `getModule` methods.
+  Mapping of module param aliases to string values that will be used to resolve $param expressions in the module. Loader-supplied params should override any defaults declared with %PARAM.
 
 #### TypeConstructorOptions
 
@@ -1528,6 +1556,9 @@ Entry representing a resolved module load for a specific set of params, Keyed in
 
 - `load: unknown`
   Final resolved value returned after parsing/loading the YAML module.
+
+- `privateLoad: unknown`
+  Final resolved value returned after parsing/loading the YAML module. but with keeping the private nodes.
 
 - `params?: Record<string, string> | undefined`
   Parameter values used to produce this load (may be undefined).

@@ -337,6 +337,8 @@ interface LoadOptions {
      *  - string[] — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
      */
     ignorePrivate?: "all" | "current" | string[];
+    /** Option to ignore all custom tags defined in YAML file and just return raw value directly. */
+    ignoreTags?: boolean;
     /** String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used. */
     filename?: string | undefined;
     /** Function to call on warning messages. */

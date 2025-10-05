@@ -522,12 +522,10 @@ class TagsHandler {
      * @param tags - Array of captured tags from YAML string.
      * @param tagsMap - Map that holds tags's handles and prefixes defined in directive.
      * @param schema - Schema passed by user.
+     * @param ignoreTags - Boolean defined in options, if set to true all tags will be ignored and will return the raw value directly.
      * @returns Array of dynamically generated types that handles tags present in this YAML string, or undefined if no schema was passed.
      */
-    convertTagsToTypes(tags, tagsMap, schema) {
-        // if no schema return directly
-        if (!schema)
-            return;
+    convertTagsToTypes(tags, tagsMap, schema, ignoreTags) {
         /** Array to hold dynamically generated types. */
         let types = [];
         /** Array to hold already generated tags if the same tag is used multiple times. */
@@ -556,7 +554,7 @@ class TagsHandler {
             const schemaTypes = schema.types.filter((t) => t.tag === "!" + tagInSchema);
             if (schemaTypes.length === 0) {
                 // generate types of the three kinds for this tag
-                const missingTypes = this._handleMissingType(fullTag, tagInSchema);
+                const missingTypes = this._handleMissingType(fullTag, tagInSchema, ignoreTags);
                 // pass them to types array
                 types.push(...missingTypes);
                 continue;
@@ -638,27 +636,34 @@ class TagsHandler {
      * Method to handle missing types from schema by returning three types of the three kinds for this tag. these type's construct function will throw when executed.
      * @param tag - Full tag (tagName + params).
      * @param tagName - Name of the tag only without params (tagName).
+     * @param ignoreTags - Boolean defined in options, if set to true all tags will be ignored and will return the raw value directly.
      * @returns Types to handle missing type from schema, so if tag is read specific error message if thrown.
      */
-    _handleMissingType(tag, tagName) {
+    _handleMissingType(tag, tagName, ignoreTags) {
         // get error object
         const error = new WrapperYAMLException(`Unkown tag: ${tagName}`);
         // generate types
         const scalarType = new Type(tag, {
             kind: "scalar",
             construct(data, type, params) {
+                if (ignoreTags)
+                    return data;
                 throw error;
             },
         });
         const mappingType = new Type(tag, {
             kind: "mapping",
             construct(data, type, params) {
+                if (ignoreTags)
+                    return data;
                 throw error;
             },
         });
         const sequenceType = new Type(tag, {
             kind: "sequence",
             construct(data, type, params) {
+                if (ignoreTags)
+                    return data;
                 throw error;
             },
         });
@@ -761,8 +766,6 @@ class BridgeHandler {
      * @returns js-yaml schema ready to passed to js-yaml load function.
      */
     schemaBridge(schema, types) {
-        if (!schema)
-            return; // if no schema return
         // create schema of the types and return it
         switch (schema.group) {
             case "CORE":
@@ -3094,6 +3097,7 @@ async function handleNewModuleAsync(str, opts, loadId) {
  * @returns Object that holds blue print and directive object which has meta data read from directive part of the YAML.
  */
 function executeStr(str, opts, loadId) {
+    var _a;
     // create empty module cache
     if (opts.filepath)
         addModuleCache(loadId, str, opts.filepath);
@@ -3108,12 +3112,14 @@ function executeStr(str, opts, loadId) {
         const path = imp.path;
         internalLoad(path, { ...opts, params }, loadId);
     }
+    // generate defualt empty schema if no schema defined by user
+    const schema = (_a = opts.schema) !== null && _a !== void 0 ? _a : new Schema([], "DEFAULT");
     // handle tags by fetching them then converting them to wrapper types
     const tags = tagsHandler.captureTags(str);
-    const types = tagsHandler.convertTagsToTypes(tags, directives.tagsMap, opts.schema);
+    const types = tagsHandler.convertTagsToTypes(tags, directives.tagsMap, schema, opts.ignoreTags);
     // bridge from wrapper types to js-yaml types
     const JTypes = bridgeHandler.typesBridge(types);
-    const JSchema = bridgeHandler.schemaBridge(opts.schema, JTypes);
+    const JSchema = bridgeHandler.schemaBridge(schema, JTypes);
     // load using js-yaml
     const rawLoad = JSchema
         ? jsYaml.load(str, { ...opts, schema: JSchema })
@@ -3135,6 +3141,7 @@ function executeStr(str, opts, loadId) {
  * @returns Object that holds blue print and directive object which has meta data read from directive part of the YAML.
  */
 async function executeStrAsync(str, opts, loadId) {
+    var _a;
     // create empty module cache
     if (opts.filepath)
         addModuleCache(loadId, str, opts.filepath);
@@ -3149,12 +3156,14 @@ async function executeStrAsync(str, opts, loadId) {
         const path = imp.path;
         await internalLoadAsync(path, { ...opts, params }, loadId);
     }
+    // generate defualt empty schema if no schema defined by user
+    const schema = (_a = opts.schema) !== null && _a !== void 0 ? _a : new Schema([], "DEFAULT");
     // handle tags by fetching them then converting them to wrapper types
     const tags = tagsHandler.captureTags(str);
-    const types = tagsHandler.convertTagsToTypes(tags, directives.tagsMap, opts.schema);
+    const types = tagsHandler.convertTagsToTypes(tags, directives.tagsMap, schema, opts.ignoreTags);
     // bridge from wrapper types to js-yaml types
     const JTypes = bridgeHandler.typesBridge(types);
-    const JSchema = bridgeHandler.schemaBridge(opts.schema, JTypes);
+    const JSchema = bridgeHandler.schemaBridge(schema, JTypes);
     // load using js-yaml
     const rawLoad = JSchema
         ? jsYaml.load(str, { ...opts, schema: JSchema })

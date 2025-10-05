@@ -51,11 +51,9 @@ class BridgeHandler {
    * @returns js-yaml schema ready to passed to js-yaml load function.
    */
   schemaBridge(
-    schema: Schema | undefined,
+    schema: Schema,
     types: JType[] | undefined
   ): JSchema | undefined {
-    if (!schema) return; // if no schema return
-
     // create schema of the types and return it
     switch (schema.group) {
       case "CORE":

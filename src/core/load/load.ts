@@ -1,16 +1,17 @@
 import { load as JLoad } from "js-yaml";
 import type { LoadOptions as jLoadOptions } from "js-yaml";
-import type {
-  DirectivesObj,
-  LoadOptions,
-  ModuleLoadCache,
-  HandledLoadOpts,
+import {
+  type DirectivesObj,
+  type LoadOptions,
+  type ModuleLoadCache,
+  type HandledLoadOpts,
 } from "../../types.js";
 import { TagsHandler } from "./preload/tagHandlers.js";
 import { bridgeHandler } from "../bridge.js";
 import { DirectivesHandler } from "./preload/directives.js";
 import { ResolveHandler } from "./postload/resolveHandler.js";
 import { WrapperYAMLException } from "../../wrapperClasses/wrapperError.js";
+import { Schema } from "../../wrapperClasses/schema.js";
 import { circularDepClass } from "../circularDep.js";
 import {
   readFile,
@@ -597,17 +598,21 @@ function executeStr(
     internalLoad(path, { ...(opts as LoadOptions), params }, loadId);
   }
 
+  // generate defualt empty schema if no schema defined by user
+  const schema = opts.schema ?? new Schema([], "DEFAULT");
+
   // handle tags by fetching them then converting them to wrapper types
   const tags = tagsHandler.captureTags(str);
   const types = tagsHandler.convertTagsToTypes(
     tags,
     directives.tagsMap,
-    opts.schema
+    schema,
+    opts.ignoreTags
   );
 
   // bridge from wrapper types to js-yaml types
   const JTypes = bridgeHandler.typesBridge(types);
-  const JSchema = bridgeHandler.schemaBridge(opts.schema, JTypes);
+  const JSchema = bridgeHandler.schemaBridge(schema, JTypes);
 
   // load using js-yaml
   const rawLoad = JSchema
@@ -654,17 +659,21 @@ async function executeStrAsync(
     await internalLoadAsync(path, { ...(opts as LoadOptions), params }, loadId);
   }
 
+  // generate defualt empty schema if no schema defined by user
+  const schema = opts.schema ?? new Schema([], "DEFAULT");
+
   // handle tags by fetching them then converting them to wrapper types
   const tags = tagsHandler.captureTags(str);
   const types = tagsHandler.convertTagsToTypes(
     tags,
     directives.tagsMap,
-    opts.schema
+    schema,
+    opts.ignoreTags
   );
 
   // bridge from wrapper types to js-yaml types
   const JTypes = bridgeHandler.typesBridge(types);
-  const JSchema = bridgeHandler.schemaBridge(opts.schema, JTypes);
+  const JSchema = bridgeHandler.schemaBridge(schema, JTypes);
 
   // load using js-yaml
   const rawLoad = JSchema

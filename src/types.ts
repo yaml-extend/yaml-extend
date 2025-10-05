@@ -266,6 +266,9 @@ export interface LoadOptions {
    */
   ignorePrivate?: "all" | "current" | string[];
 
+  /** Option to ignore all custom tags defined in YAML file and just return raw value directly. */
+  ignoreTags?: boolean;
+
   /** String to be used as a file path in error/warning messages. It will be overwritten by YAML text `FILENAME` directive if used. */
   filename?: string | undefined;
 
@@ -289,6 +292,7 @@ export type HandledLoadOpts = {
   filepath?: string | undefined;
   params: Record<string, string>;
   ignorePrivate: "all" | string | string[] | undefined;
+  ignoreTags?: boolean;
   filename?: string | undefined;
   onWarning?(this: null, e: YAMLException | WrapperYAMLException): void;
   schema?: Schema | undefined;

@@ -1269,6 +1269,9 @@ Options object passed to control load behavior. basePath, filpath and params are
   - `current` — ignore private definitions only in the current entry-point module.
   - `string[]` — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
 
+- `ignoreTags?: boolean | undefined` — Default: `false`
+  Option to ignore all custom tags defined in YAML file and just return raw value directly.
+
 - `filepath?: string | undefined` — Default: `undefined`
   The resolved path of the YAML source. Useful for error messages, caching, and resolving relative imports. If you call `load("./file.yaml")` the loader should set this to the resolved absolute path automatically. `Note that imports and caching will not work if filepath is not supplied here or in function's str field`.
 
@@ -1375,6 +1378,9 @@ Options object passed to control liveLoader behavior.
   - `all` — ignore private definitions in `all` loaded modules.
   - `current` — ignore private definitions only in the current entry-point module.
   - `string[]` — a list of module filenames. Private definitions are ignored only for modules whose filename matches an entry in this array.
+
+- `ignoreTags?: boolean | undefined` — Default: `false`
+  Option to ignore all custom tags defined in YAML file and just return raw value directly.
 
 - `filepath?: string | undefined` — Default: `undefined`
   Default filepath to use, can be overriden in `addModule` and `getModule` methods.

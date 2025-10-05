@@ -39,16 +39,15 @@ export class TagsHandler {
    * @param tags - Array of captured tags from YAML string.
    * @param tagsMap - Map that holds tags's handles and prefixes defined in directive.
    * @param schema - Schema passed by user.
+   * @param ignoreTags - Boolean defined in options, if set to true all tags will be ignored and will return the raw value directly.
    * @returns Array of dynamically generated types that handles tags present in this YAML string, or undefined if no schema was passed.
    */
   convertTagsToTypes(
     tags: string[],
     tagsMap: Map<string, string>,
-    schema: Schema | undefined
+    schema: Schema,
+    ignoreTags: boolean | undefined
   ): Type[] | undefined {
-    // if no schema return directly
-    if (!schema) return;
-
     /** Array to hold dynamically generated types. */
     let types: Type[] = [];
     /** Array to hold already generated tags if the same tag is used multiple times. */
@@ -83,7 +82,11 @@ export class TagsHandler {
       );
       if (schemaTypes.length === 0) {
         // generate types of the three kinds for this tag
-        const missingTypes = this._handleMissingType(fullTag, tagInSchema);
+        const missingTypes = this._handleMissingType(
+          fullTag,
+          tagInSchema,
+          ignoreTags
+        );
         // pass them to types array
         types.push(...missingTypes);
         continue;
@@ -171,9 +174,14 @@ export class TagsHandler {
    * Method to handle missing types from schema by returning three types of the three kinds for this tag. these type's construct function will throw when executed.
    * @param tag - Full tag (tagName + params).
    * @param tagName - Name of the tag only without params (tagName).
+   * @param ignoreTags - Boolean defined in options, if set to true all tags will be ignored and will return the raw value directly.
    * @returns Types to handle missing type from schema, so if tag is read specific error message if thrown.
    */
-  private _handleMissingType(tag: string, tagName: string): Type[] {
+  private _handleMissingType(
+    tag: string,
+    tagName: string,
+    ignoreTags: boolean | undefined
+  ): Type[] {
     // get error object
     const error = new WrapperYAMLException(`Unkown tag: ${tagName}`);
 
@@ -181,6 +189,7 @@ export class TagsHandler {
     const scalarType = new Type(tag, {
       kind: "scalar",
       construct(data, type, params) {
+        if (ignoreTags) return data;
         throw error;
       },
     });
@@ -188,6 +197,7 @@ export class TagsHandler {
     const mappingType = new Type(tag, {
       kind: "mapping",
       construct(data, type, params) {
+        if (ignoreTags) return data;
         throw error;
       },
     });
@@ -195,6 +205,7 @@ export class TagsHandler {
     const sequenceType = new Type(tag, {
       kind: "sequence",
       construct(data, type, params) {
+        if (ignoreTags) return data;
         throw error;
       },
     });

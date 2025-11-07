@@ -57,7 +57,8 @@ export async function parseExtend(
         {
           ...handledOpts,
           params: undefined,
-        }
+        },
+        internalParseExtend
       );
       addResolveCache(resolvedPath, undefined, parse, privateParse, [
         ...pureParseErrors,
@@ -93,7 +94,8 @@ export async function parseExtend(
       loadId,
       errors,
       moduleCache,
-      handledOpts
+      handledOpts,
+      internalParseExtend
     );
 
     // Var to hold both resolve errors and directive errors
@@ -165,7 +167,8 @@ export async function internalParseExtend(
       {
         ...handledOpts,
         params: undefined,
-      }
+      },
+      internalParseExtend
     );
     addResolveCache(resolvedPath, undefined, parse, privateParse, [
       ...pureParseErrors,
@@ -201,7 +204,8 @@ export async function internalParseExtend(
     loadId,
     errors,
     moduleCache,
-    handledOpts
+    handledOpts,
+    internalParseExtend
   );
 
   // Var to hold both resolve errors and directive errors

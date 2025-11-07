@@ -2,7 +2,12 @@ import { generateId, getClosingChar, isRecord, deepClone } from "../helpers.js";
 import { divideNodepath } from "./tokiner/helpers.js";
 import { Schema, Scalar, YAMLMap, YAMLSeq, Alias } from "yaml";
 import { YAMLError, YAMLExprError } from "../extendClasses/error.js";
-import { ModuleCache, ResolveCtx, HandledOptions } from "../../types.js";
+import {
+  ModuleCache,
+  ResolveCtx,
+  HandledOptions,
+  InternalParseExtend,
+} from "../../types.js";
 import {
   isMapExpr,
   isScalarExpr,
@@ -21,7 +26,8 @@ export async function resolve(
   loadId: string,
   errors: YAMLError[],
   moduleCache: ModuleCache,
-  opts: HandledOptions
+  opts: HandledOptions,
+  parseFunc: InternalParseExtend
 ): Promise<{ parse: unknown; privateParse: unknown; errors: YAMLError[] }> {
   // generate id specific for this load
   const resolveId = generateId();
@@ -40,6 +46,8 @@ export async function resolve(
     anchors,
     locals,
     range: [0, 0],
+    resolveFunc: resolveUnknown,
+    parseFunc,
   };
 
   // resolve

@@ -152,6 +152,19 @@ export type LoadIdsToModules = Map<string, Set<string>>;
 /** Map that links module with loadIds that read this module. */
 export type ModulesToLoadIds = Map<string, Set<string>>;
 
+export type ResolveFn = (
+  item: unknown,
+  anchored: boolean,
+  allowExpr: boolean,
+  ctx: ResolveCtx
+) => Promise<unknown>;
+
+export type InternalParseExtend = (
+  filepath: string,
+  options: Options,
+  loadId: string
+) => Promise<{ parse: unknown; errors: YAMLError[] }>;
+
 export type ResolveCtx = {
   options: HandledOptions;
   loadId: string;
@@ -161,6 +174,8 @@ export type ResolveCtx = {
   anchors: Map<string, unknown>;
   locals: Record<string, unknown>[];
   moduleCache: ModuleCache;
+  resolveFunc: ResolveFn;
+  parseFunc: InternalParseExtend;
 };
 
 export type ExtendParseOptions = {

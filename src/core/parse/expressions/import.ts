@@ -4,7 +4,6 @@ import { traverseNodes } from "./helpers.js";
 import { resolve, dirname } from "path";
 import { circularDepClass } from "../../circularDep.js";
 import { isInsideSandBox, isYamlFile } from "../../helpers.js";
-import { internalParseExtend } from "../parse.js";
 
 /**
  * Method to handle 'import' expression. works sync.
@@ -51,7 +50,7 @@ export async function handleImp(
 
   // import file
   try {
-    const { load, errors } = await importMod(
+    const { parse, errors } = await importMod(
       resolvedPath,
       targetPath,
       finalParams,
@@ -60,7 +59,7 @@ export async function handleImp(
     // add errors if present
     ctx.errors.push(...errors);
     // traverse load using nodepath and return value
-    return await traverseNodes(load, nodepath, ctx);
+    return await traverseNodes(parse, nodepath, ctx);
   } catch (err) {
     if (err instanceof YAMLError) ctx.errors.push(err);
     else
@@ -90,10 +89,10 @@ async function importMod(
   targetParams: Record<string, unknown>,
   ctx: ResolveCtx
 ): Promise<{
-  load: unknown;
+  parse: unknown;
   errors: YAMLError[];
 }> {
-  const { options, loadId } = ctx;
+  const { options, loadId, parseFunc } = ctx;
   // remove file name from module path if present
   const dirModulePath = removeFileName(modulePath);
 
@@ -106,10 +105,10 @@ async function importMod(
   );
 
   // if error while resolving path return empty errors and undefined load
-  if (!resolvedPath) return { errors: [], load: undefined };
+  if (!resolvedPath) return { errors: [], parse: undefined };
 
   // load str
-  const parseData = await internalParseExtend(
+  const parseData = await parseFunc(
     resolvedPath,
     {
       ...options,

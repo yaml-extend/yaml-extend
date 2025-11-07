@@ -1,6 +1,6 @@
 {
   "name": "yaml-extend",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "Wrapper around `js-yaml` that adds focused, deterministic templating features to YAML: imports, per-module params, locals, private fields, typed expressions and small tag payloads — with caching and a file-watching `LiveLoader`.",
   "type": "module",
   "main": "dist/cjs/index.js",
@@ -29,7 +29,6 @@
   "author": "ZiadTaha62",
   "license": "MIT",
   "dependencies": {
-    "js-yaml": "^4.1.0",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

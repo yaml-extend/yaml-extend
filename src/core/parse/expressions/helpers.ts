@@ -2,7 +2,6 @@ import { Alias, Scalar, YAMLMap, YAMLSeq } from "yaml";
 import { YAMLExprError } from "../../extendClasses/error.js";
 import { ResolveCtx } from "../../../types.js";
 import { isRecord } from "../../helpers.js";
-import { resolveUnknown } from "../resolveHandler.js";
 
 /**
  * Method to traverse through nodes tree. works sync.
@@ -62,7 +61,7 @@ export async function handleStrPath(
       if (pair.key instanceof Scalar) key = pair.key.value;
       else key = pair.key;
       if (key === pathPart) {
-        const resVal = await resolveUnknown(pair.value, true, true, ctx);
+        const resVal = await ctx.resolveFunc(pair.value, true, true, ctx);
         return { node: resVal, resolved: true };
       }
     }
@@ -71,7 +70,7 @@ export async function handleStrPath(
   // if node is a YAMLSeq, check all the items
   if (node instanceof YAMLSeq) {
     for (const item of node.items) {
-      const resItem = await resolveUnknown(item, true, true, ctx);
+      const resItem = await ctx.resolveFunc(item, true, true, ctx);
       if (typeof resItem === "string" && resItem === pathPart)
         return { node: resItem, resolved: true };
     }
@@ -103,7 +102,7 @@ export async function handleNumPath(
       if (pair.key instanceof Scalar) key = pair.key.value;
       else key = pair.key;
       if (key === `${pathPart}`) {
-        const resVal = await resolveUnknown(pair.value, true, true, ctx);
+        const resVal = await ctx.resolveFunc(pair.value, true, true, ctx);
         return { node: resVal, resolved: true };
       }
     }
@@ -114,14 +113,14 @@ export async function handleNumPath(
     const length = node.items.length;
     if (pathPart < length) {
       const item = node.items[pathPart];
-      const resItem = await resolveUnknown(item, true, true, ctx);
+      const resItem = await ctx.resolveFunc(item, true, true, ctx);
       return { node: resItem, resolved: true };
     }
   }
 
   // if node is a scalar, get character at the index directly
   if (node instanceof Scalar) {
-    const resScalar = await resolveUnknown(node.value, true, true, ctx);
+    const resScalar = await ctx.resolveFunc(node.value, true, true, ctx);
     if (typeof resScalar === "string") {
       const length = node.value.length;
       if (pathPart < length)

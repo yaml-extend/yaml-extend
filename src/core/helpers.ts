@@ -1,10 +1,11 @@
-import { readFileSync as readFileSyncFS, realpathSync } from "fs";
+import { realpathSync } from "fs";
 import { readFile as readFileAsyncFS } from "fs/promises";
 import { resolve, relative, parse } from "path";
-import { WrapperYAMLException } from "../wrapperClasses/wrapperError.js";
-import { fileNameRegex } from "./load/regex.js";
 import { createHash, randomBytes } from "crypto";
-import type { HandledLoadOpts, LiveLoaderOptions } from "../types.js";
+import type { HandledOptions } from "../types.js";
+
+/** Regex to capture if a path has .yaml or .yml in it or not. */
+export const fileNameRegex = /.ya?ml$/;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // This file contains Helper functions that are not related to our core work directly.
@@ -27,44 +28,20 @@ export function resolvePath(targetPath: string, currentPath: string) {
  * @param currentPath - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
-export function readFile(
+export async function readFile(
   resolvedPath: string,
   currentPath: string,
-  loadOpts: HandledLoadOpts | LiveLoaderOptions
-): string {
-  const resCurrentPath = resolve(currentPath);
-
-  if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
-    throw new WrapperYAMLException(
-      `Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`
-    );
-
-  if (!isYamlFile(resolvedPath))
-    throw new WrapperYAMLException(`You can only load YAML files the loader.`);
-
-  return readFileSyncFS(resolvedPath, { encoding: "utf8" });
-}
-
-/**
- * Function to resolve paths by adding basepath (path of the current module) and path (path of the imported or read module) together making absolute path of them.
- * @param resolvedPath - Resolved path from concatinating current file path with imported file path. works async.
- * @param currentPath - Path of the current module.
- * @returns Read value of the file in UTF-8 format.
- */
-export async function readFileAsync(
-  resolvedPath: string,
-  currentPath: string,
-  loadOpts: HandledLoadOpts | LiveLoaderOptions
+  loadOpts: HandledOptions
 ): Promise<string> {
   const resCurrentPath = resolve(currentPath);
 
   if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
-    throw new WrapperYAMLException(
+    throw new Error(
       `Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`
     );
 
   if (!isYamlFile(resolvedPath))
-    throw new WrapperYAMLException(
+    throw new Error(
       `You can only load YAML files the loader. loaded file: ${resolvedPath}`
     );
 
@@ -137,7 +114,7 @@ export function stableStringify(obj: any): string {
  * @param params - Params object that will be hashed.
  * @returns Stable hash of params object that will only change if value or key inside object changed.
  */
-export function hashParams(params: Record<string, string>): string {
+export function hashParams(params: Record<string, unknown>): string {
   // stringify object
   const strObj = stableStringify(params);
   // hash and return

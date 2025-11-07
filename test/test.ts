@@ -1,9 +1,6 @@
-import { load } from "../src/index";
+import { parseExtend } from "../src/core/parse/parse.js";
 
-const loaded = load("./test.yaml", {
-  basePath: "./test",
-  filename: "test",
-  ignorePrivate: "all",
-});
+/// test
+const y = await parseExtend("./test.yaml", { basePath: "./test" });
 
-console.debug(loaded);
+console.log("Y: ", y, y.errors);

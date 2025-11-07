@@ -1,12 +1,14 @@
-%IMPORT gg "./test2.yaml"
-%PRIVATE node
+# %IMPORT gg "./test2.yaml"
+# %PRIVATE node
+%FILENAME file1
+%IMPORT alias "./test2.yaml"
 ---
 node:
   nested Node:
     nestedNested.Node: value
-
-x: { $this.node."nested Node" }
-
-y: $this.x."nestedNested.Node"
-
-z: $import.gg.node99
+k: [1, 2, "ff"]
+kk:
+  - 2
+  - 3
+a: { $this.node }
+ff: $import.alias.node99

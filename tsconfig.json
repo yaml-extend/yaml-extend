@@ -1,19 +1,19 @@
 {
   "compilerOptions": {
-    "module": "ESNext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "target": "ES2019",
     "declaration": true,
     "emitDeclarationOnly": true,
     "lib": ["ES2022"],
     "sourceMap": true,
     "outDir": "types",
-    "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "importHelpers": false,
     "stripInternal": true
   },
-  "include": ["src"],
+  "include": ["src", "types", "test"],
   "exclude": ["node_modules", "dist"]
 }

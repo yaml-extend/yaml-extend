@@ -1,11 +1,15 @@
 import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, DocumentOptions, SchemaOptions, ToJSOptions, Alias, Scalar, YAMLMap, YAMLSeq } from 'yaml';
 export * from 'yaml';
+export { YAMLParseError, YAMLWarning } from 'yaml';
 
 type ErrorName = "YAMLParseError" | "YAMLWarning" | "YAMLExprError";
 type ExprErrorCode = "";
 type ErrorCode = ErrorCode$1 | ExprErrorCode;
 declare class YAMLError extends YAMLError$1 {
     constructor(name: ErrorName, pos: [number, number], code: ErrorCode, message: string);
+}
+declare class YAMLExprError extends YAMLError {
+    constructor(pos: [number, number], code: ErrorCode, message: string);
 }
 
 /** Object the holds directives data for YAML file. */
@@ -170,5 +174,5 @@ declare function parseExtend(filepath: string, options?: Options): Promise<{
     errors: YAMLError$1[];
 }>;
 
-export { LiveLoader, hashParams, parseExtend };
+export { LiveLoader, YAMLError, YAMLExprError, hashParams, parseExtend };
 export type { DirectivesObj, ModuleCache, Options, ParamLoadEntry };

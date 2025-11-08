@@ -99,12 +99,18 @@ function resolveAlias(alias: Alias, ctx: ResolveCtx) {
   // update range
   if (alias.range) ctx.range = [alias.range[0], alias.range[1]];
   else ctx.range = undefined;
+  // var to hold out value
+  let out: unknown;
+  // check if it's saved in aliases
+  const present = ctx.anchors.has(alias.source);
   // resolve anchor
-  if (ctx.anchors.has(alias.source)) return ctx.anchors.get(alias.source);
-  ctx.errors.push(
-    new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", "")
-  );
-  return undefined;
+  if (present) out = ctx.anchors.get(alias.source);
+  else
+    ctx.errors.push(
+      new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", "")
+    );
+  alias.resolvedValue = out;
+  return out;
 }
 
 /**
@@ -139,8 +145,9 @@ async function resolveScalar(
   if (scalar.tag) out = await resolveTag(scalar.value, scalar.tag, ctx);
   // handle anchor if present
   if (scalar.anchor) ctx.anchors.set(scalar.anchor, out);
-  // mark it as resolved and return value
+  // mark it as resolved, save resolved value return it
   scalar.resolved = true;
+  scalar.resolvedValue = out;
   return out;
 }
 
@@ -195,6 +202,7 @@ async function resolveMap(
   if (map.tag) out = await resolveTag(out, map.tag, ctx);
   if (map.anchor) ctx.anchors.set(map.anchor, out);
   map.resolved = true;
+  map.resolvedValue = out;
   return out;
 }
 
@@ -237,6 +245,7 @@ async function resolveSeq(seq: YAMLMap, anchored: boolean, ctx: ResolveCtx) {
   if (seq.tag) out = await resolveTag(out, seq.tag, ctx);
   if (seq.anchor) ctx.anchors.set(seq.anchor, out);
   seq.resolved = true;
+  seq.resolvedValue = out;
   return out;
 }
 
@@ -247,6 +256,7 @@ async function resolveTag(
 ): Promise<unknown> {
   // get tag from schema
   const { options } = ctx;
+  if (options.ignoreTags) return data;
   if (!(options.schema instanceof Schema)) {
     ctx.errors.push(
       new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", "")

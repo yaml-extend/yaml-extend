@@ -1478,11 +1478,17 @@ function resolveAlias(alias, ctx) {
         ctx.range = [alias.range[0], alias.range[1]];
     else
         ctx.range = undefined;
+    // var to hold out value
+    let out;
+    // check if it's saved in aliases
+    const present = ctx.anchors.has(alias.source);
     // resolve anchor
-    if (ctx.anchors.has(alias.source))
-        return ctx.anchors.get(alias.source);
-    ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
-    return undefined;
+    if (present)
+        out = ctx.anchors.get(alias.source);
+    else
+        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+    alias.resolvedValue = out;
+    return out;
 }
 /**
  * Method to resolve string (scalar in YAML). works sync.
@@ -1515,8 +1521,9 @@ async function resolveScalar(scalar, anchored, allowExpr, ctx) {
     // handle anchor if present
     if (scalar.anchor)
         ctx.anchors.set(scalar.anchor, out);
-    // mark it as resolved and return value
+    // mark it as resolved, save resolved value return it
     scalar.resolved = true;
+    scalar.resolvedValue = out;
     return out;
 }
 /**
@@ -1566,6 +1573,7 @@ async function resolveMap(map, anchored, ctx) {
     if (map.anchor)
         ctx.anchors.set(map.anchor, out);
     map.resolved = true;
+    map.resolvedValue = out;
     return out;
 }
 async function resolveSeq(seq, anchored, ctx) {
@@ -1604,11 +1612,14 @@ async function resolveSeq(seq, anchored, ctx) {
     if (seq.anchor)
         ctx.anchors.set(seq.anchor, out);
     seq.resolved = true;
+    seq.resolvedValue = out;
     return out;
 }
 async function resolveTag(data, tag, ctx) {
     // get tag from schema
     const { options } = ctx;
+    if (options.ignoreTags)
+        return data;
     if (!(options.schema instanceof yaml.Schema)) {
         ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
         return data;
@@ -2036,7 +2047,17 @@ class LiveLoader {
     }
 }
 
+Object.defineProperty(exports, "YAMLParseError", {
+    enumerable: true,
+    get: function () { return yaml.YAMLParseError; }
+});
+Object.defineProperty(exports, "YAMLWarning", {
+    enumerable: true,
+    get: function () { return yaml.YAMLWarning; }
+});
 exports.LiveLoader = LiveLoader;
+exports.YAMLError = YAMLError;
+exports.YAMLExprError = YAMLExprError;
 exports.hashParams = hashParams;
 exports.parseExtend = parseExtend;
 Object.keys(yaml).forEach(function (k) {

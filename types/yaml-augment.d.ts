@@ -1,16 +1,20 @@
 import "yaml";
 
-type Reviver = (key: unknown, value: unknown) => unknown;
-
 declare module "yaml" {
   // Augmenting by adding resolved
   interface Scalar<T = unknown> {
-    resolved?: boolean;
+    resolved: boolean;
+    resolvedValue?: unknown;
   }
   interface YAMLMap<K = unknown, V = unknown> {
-    resolved?: boolean;
+    resolved: boolean;
+    resolvedValue: unknown;
   }
   interface YAMLSeq<T = unknown> {
-    resolved?: boolean;
+    resolved: boolean;
+    resolvedValue: unknown;
+  }
+  interface Alias {
+    resolvedValue: unknown;
   }
 }

@@ -89,5 +89,6 @@ export function handleDir(str: string): DirectivesObj {
     importsMap,
     filename,
     errors,
+    directives: dirs,
   };
 }

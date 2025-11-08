@@ -933,6 +933,7 @@ function handleDir(str) {
         importsMap,
         filename,
         errors,
+        directives: dirs,
     };
 }
 

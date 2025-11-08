@@ -10,6 +10,10 @@ declare class YAMLError extends YAMLError$1 {
 
 /** Object the holds directives data for YAML file. */
 type DirectivesObj = {
+    directives: {
+        dir: string;
+        pos: [number, number];
+    }[];
     /** Logical filename as declared by the %FILENAME YAML directive. */
     filename: string | undefined;
     /** Map of handle → prefix (URI) as declared by the %TAG YAML directive. */

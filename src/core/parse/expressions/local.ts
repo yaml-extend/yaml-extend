@@ -26,7 +26,9 @@ export function handleLocal(parts: LocalExprParts, ctx: ResolveCtx): unknown {
     );
     return undefined;
   }
-  const defLocal = localsMap.get(alias);
+  let defLocal: string | undefined | object = localsMap.get(alias);
+  if (defLocal === "{}") defLocal = {};
+  if (defLocal === "[]") defLocal = [];
 
   // generate localsVal object from values passed after $this
   const handledLocalsVal = Object.fromEntries(

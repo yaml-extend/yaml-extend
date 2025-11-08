@@ -91,7 +91,7 @@ export async function resolveUnknown(
 async function resolveString(str: string, ctx: ResolveCtx) {
   let out: unknown = str;
   const { isExpr, expr } = isStringExpr(str);
-  if (isExpr) out = await handleStringExp(expr, false, ctx);
+  if (isExpr) out = await handleExpr(expr, ctx);
   return out;
 }
 
@@ -139,8 +139,10 @@ async function resolveScalar(
   }
   // Handle value
   const { isExpr, expr } = isScalarExpr(scalar);
-  if (isExpr && allowExpr) out = await handleStringExp(expr, true, ctx);
-  else out = await handleString(scalar.value as string, ctx);
+  if (isExpr && allowExpr) {
+    out = await handleExpr(expr, ctx);
+    if (out && typeof out === "object") out = JSON.stringify(out);
+  } else out = await handleString(scalar.value as string, ctx);
   // handle tag if present
   if (scalar.tag) out = await resolveTag(scalar.value, scalar.tag, ctx);
   // handle anchor if present
@@ -175,7 +177,7 @@ async function resolveMap(
     );
     return undefined;
   }
-  const { isExpr, expr } = isMapExpr(map);
+  const { isExpr, expr, scalar } = isMapExpr(map);
   if (isExpr) {
     const val = await handleExpr(expr, ctx);
     if (val && typeof val === "object" && !Array.isArray(val)) out = val;
@@ -189,6 +191,7 @@ async function resolveMap(
       );
       out = undefined;
     }
+    scalar.resolvedValue = out;
   } else {
     const res: Record<string, unknown> = {};
     for (const pair of map.items) {
@@ -211,7 +214,6 @@ async function resolveSeq(seq: YAMLMap, anchored: boolean, ctx: ResolveCtx) {
   if (seq.range) ctx.range = [seq.range[0], seq.range[1]];
   else ctx.range = undefined;
   // var to hold out value
-
   let out: unknown;
   if (anchored && !seq.resolved) {
     ctx.errors.push(
@@ -219,7 +221,7 @@ async function resolveSeq(seq: YAMLMap, anchored: boolean, ctx: ResolveCtx) {
     );
     return undefined;
   }
-  const { isExpr, expr } = isSeqExpr(seq);
+  const { isExpr, expr, scalar } = isSeqExpr(seq);
   if (isExpr) {
     const val = await handleExpr(expr, ctx);
     if (Array.isArray(val)) out = val;
@@ -233,7 +235,7 @@ async function resolveSeq(seq: YAMLMap, anchored: boolean, ctx: ResolveCtx) {
       );
       out = undefined;
     }
-    out = seq.items;
+    scalar.resolvedValue = out;
   } else {
     let res: unknown[] = [];
     for (const item of seq.items) {
@@ -342,16 +344,6 @@ async function handleString(
     i++;
   }
   return out;
-}
-
-async function handleStringExp(
-  str: string,
-  stringify: boolean,
-  ctx: ResolveCtx
-): Promise<unknown> {
-  let val = await handleExpr(str, ctx);
-  if (val && typeof val === "object" && stringify) val = JSON.stringify(val);
-  return val;
 }
 
 /**

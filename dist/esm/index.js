@@ -945,19 +945,19 @@ function handleDir(str) {
  */
 function isMapExpr(map) {
     if (!map.flow)
-        return { isExpr: false, expr: "" }; // make sure it's a flow syntax
+        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a flow syntax
     if (map.items.length !== 1)
-        return { isExpr: false, expr: "" }; // make sure it's a single key
+        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a single key
     if (!(map.items[0].key instanceof Scalar))
-        return { isExpr: false, expr: "" }; // make sure key is scalar
+        return { isExpr: false, expr: "", scalar: undefined }; // make sure key is scalar
     if (map.items[0].value !== null)
-        return { isExpr: false, expr: "" }; // make sure value is null
+        return { isExpr: false, expr: "", scalar: map.items[0].key }; // make sure value is null
     const key = map.items[0].key.value; // get value of the scalar
     if (typeof key !== "string")
-        return { isExpr: false, expr: "" }; // make sure value of the Scalar instance is a string
+        return { isExpr: false, expr: "", scalar: map.items[0].key }; // make sure value of the Scalar instance is a string
     const tStr = key.trim(); // trim string
     const isExpr = tStr[0] === "$" && tStr[1] !== "$" && tStr[1] !== "{"; // make sure it's valid syntax
-    return { isExpr, expr: tStr }; // make sure it's valid syntax
+    return { isExpr, expr: tStr, scalar: map.items[0].key }; // make sure it's valid syntax
 }
 /**
  * Method to check if sequence (array) in raw load is actaully sequence expression. sequence interpolations are defined with this structure in YAML file: [ $<int> ]
@@ -967,17 +967,17 @@ function isMapExpr(map) {
  */
 function isSeqExpr(seq) {
     if (!seq.flow)
-        return { isExpr: false, expr: "" }; // make sure it's a flow syntax
+        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a flow syntax
     if (seq.items.length !== 1)
-        return { isExpr: false, expr: "" }; // make sure it's a single item
+        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a single item
     if (!(seq.items[0] instanceof Scalar))
-        return { isExpr: false, expr: "" }; // make sure item is scalar
+        return { isExpr: false, expr: "", scalar: undefined }; // make sure item is scalar
     const item = seq.items[0].value; // get value of the scalar
     if (typeof item !== "string")
-        return { isExpr: false, expr: "" }; // make sure value of the Scalar instance is a string
+        return { isExpr: false, expr: "", scalar: seq.items[0] }; // make sure value of the Scalar instance is a string
     const tStr = item.trim(); // trim string
     const isExpr = tStr[0] === "$" && tStr[1] !== "$" && tStr[1] !== "{"; // make sure it's valid syntax
-    return { isExpr, expr: tStr };
+    return { isExpr, expr: tStr, scalar: seq.items[0] };
 }
 /**
  * Method to check if scalar (string) in raw load is actaully scalar expression. scalar interpolations are defined with this structure in YAML file: $<int>
@@ -1001,17 +1001,17 @@ function isStringExpr(str) {
 
 /** Regex to capture starting dot. */
 const START_WITH_DOT = /^\./;
-function handleExpression(expr, ctx) {
+async function handleExpression(expr, ctx) {
     if (expr.startsWith("$this"))
-        return { type: "this", parts: handleExprThis(expr, ctx) };
+        return { type: "this", parts: await handleExprThis(expr, ctx) };
     if (expr.startsWith("$import"))
-        return { type: "import", parts: handleExprImport(expr, ctx) };
+        return { type: "import", parts: await handleExprImport(expr, ctx) };
     if (expr.startsWith("$local"))
         return { type: "local", parts: handleExprLocal(expr, ctx) };
     if (expr.startsWith("$param"))
         return { type: "param", parts: handleExprParam(expr, ctx) };
 }
-function handleExprThis(expr, ctx) {
+async function handleExprThis(expr, ctx) {
     var _a, _b;
     // get current position (used in error messages)
     const pos = ctx.range ? ctx.range : [0, 99999];
@@ -1035,13 +1035,15 @@ function handleExprThis(expr, ctx) {
             // remove wrapping escape char if present
             const handledKey = key && removeEscChar(key);
             const handledValue = value && removeEscChar(value);
+            // resolve value if it was expression
+            const resValue = await resolveUnknown(handledValue, true, true, ctx);
             // add to keyValue object
-            keyValue[handledKey] = handledValue;
+            keyValue[handledKey] = resValue;
         }
     // return parts
     return { nodepath: handledNodepath, keyValue };
 }
-function handleExprImport(expr, ctx) {
+async function handleExprImport(expr, ctx) {
     var _a, _b;
     // get current position (used in error messages)
     const pos = ctx.range ? ctx.range : [0, 99999];
@@ -1062,8 +1064,10 @@ function handleExprImport(expr, ctx) {
             // remove wrapping escape char if present
             const handledKey = key && removeEscChar(key);
             const handledValue = value && removeEscChar(value);
+            // resolve value if it was expression
+            const resValue = await resolveUnknown(handledValue, true, true, ctx);
             // add to keyValue object
-            keyValue[handledKey] = handledValue;
+            keyValue[handledKey] = resValue;
         }
     // return parts
     return { nodepath: handledNodepath, keyValue };
@@ -1262,7 +1266,11 @@ function handleLocal(parts, ctx) {
         ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Alias used in local expression: '${alias}' is not defined in directives.`));
         return undefined;
     }
-    const defLocal = localsMap.get(alias);
+    let defLocal = localsMap.get(alias);
+    if (defLocal === "{}")
+        defLocal = {};
+    if (defLocal === "[]")
+        defLocal = [];
     // generate localsVal object from values passed after $this
     const handledLocalsVal = Object.fromEntries(locals
         .map((obj) => {
@@ -1388,7 +1396,7 @@ function removeFileName(path) {
  * @returns Value returned from expression resolve.
  */
 async function handleExpr(expr, ctx) {
-    const exprData = handleExpression(expr, ctx);
+    const exprData = await handleExpression(expr, ctx);
     if (!exprData) {
         ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Invalid type in expression: ${expr} defined types are: 'this' , 'import', 'param' and 'local'`));
         return expr;
@@ -1469,7 +1477,7 @@ async function resolveString(str, ctx) {
     let out = str;
     const { isExpr, expr } = isStringExpr(str);
     if (isExpr)
-        out = await handleStringExp(expr, false, ctx);
+        out = await handleExpr(expr, ctx);
     return out;
 }
 function resolveAlias(alias, ctx) {
@@ -1511,8 +1519,11 @@ async function resolveScalar(scalar, anchored, allowExpr, ctx) {
     }
     // Handle value
     const { isExpr, expr } = isScalarExpr(scalar);
-    if (isExpr && allowExpr)
-        out = await handleStringExp(expr, true, ctx);
+    if (isExpr && allowExpr) {
+        out = await handleExpr(expr, ctx);
+        if (out && typeof out === "object")
+            out = JSON.stringify(out);
+    }
     else
         out = await handleString(scalar.value, ctx);
     // handle tag if present
@@ -1546,7 +1557,7 @@ async function resolveMap(map, anchored, ctx) {
         ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
         return undefined;
     }
-    const { isExpr, expr } = isMapExpr(map);
+    const { isExpr, expr, scalar } = isMapExpr(map);
     if (isExpr) {
         const val = await handleExpr(expr, ctx);
         if (val && typeof val === "object" && !Array.isArray(val))
@@ -1555,6 +1566,7 @@ async function resolveMap(map, anchored, ctx) {
             ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Expression: ${expr} is wrapped inside {} but it's value is not a mapping.`));
             out = undefined;
         }
+        scalar.resolvedValue = out;
     }
     else {
         const res = {};
@@ -1588,7 +1600,7 @@ async function resolveSeq(seq, anchored, ctx) {
         ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
         return undefined;
     }
-    const { isExpr, expr } = isSeqExpr(seq);
+    const { isExpr, expr, scalar } = isSeqExpr(seq);
     if (isExpr) {
         const val = await handleExpr(expr, ctx);
         if (Array.isArray(val))
@@ -1597,7 +1609,7 @@ async function resolveSeq(seq, anchored, ctx) {
             ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Expression: ${expr} is wrapped inside [] but it's value is not a sequence.`));
             out = undefined;
         }
-        out = seq.items;
+        scalar.resolvedValue = out;
     }
     else {
         let res = [];
@@ -1685,12 +1697,6 @@ async function handleString(str, ctx) {
         i++;
     }
     return out;
-}
-async function handleStringExp(str, stringify, ctx) {
-    let val = await handleExpr(str, ctx);
-    if (val && typeof val === "object" && stringify)
-        val = JSON.stringify(val);
-    return val;
 }
 /**
  * Method to filter private nodes from final load.

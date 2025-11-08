@@ -2,6 +2,25 @@ import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, Docum
 export * from 'yaml';
 export { YAMLParseError, YAMLWarning } from 'yaml';
 
+declare module "yaml" {
+  // Augmenting by adding resolved
+  interface Scalar<T = unknown> {
+    resolved: boolean;
+    resolvedValue?: unknown;
+  }
+  interface YAMLMap<K = unknown, V = unknown> {
+    resolved: boolean;
+    resolvedValue: unknown;
+  }
+  interface YAMLSeq<T = unknown> {
+    resolved: boolean;
+    resolvedValue: unknown;
+  }
+  interface Alias {
+    resolvedValue: unknown;
+  }
+}
+
 type ErrorName = "YAMLParseError" | "YAMLWarning" | "YAMLExprError";
 type ExprErrorCode = "";
 type ErrorCode = ErrorCode$1 | ExprErrorCode;

@@ -14,25 +14,31 @@ import {
   divideKeyValue,
   divideNodepath,
 } from "./helpers.js";
+import { resolveUnknown } from "../resolveHandler.js";
 
 /** Regex to capture starting dot. */
 const START_WITH_DOT = /^\./;
 
-export function handleExpression(
+export async function handleExpression(
   expr: string,
   ctx: ResolveCtx
-): { type: ExpressionTypes; parts: Partial<ExpressionPartsObj> } | undefined {
+): Promise<
+  { type: ExpressionTypes; parts: Partial<ExpressionPartsObj> } | undefined
+> {
   if (expr.startsWith("$this"))
-    return { type: "this", parts: handleExprThis(expr, ctx) };
+    return { type: "this", parts: await handleExprThis(expr, ctx) };
   if (expr.startsWith("$import"))
-    return { type: "import", parts: handleExprImport(expr, ctx) };
+    return { type: "import", parts: await handleExprImport(expr, ctx) };
   if (expr.startsWith("$local"))
     return { type: "local", parts: handleExprLocal(expr, ctx) };
   if (expr.startsWith("$param"))
     return { type: "param", parts: handleExprParam(expr, ctx) };
 }
 
-function handleExprThis(expr: string, ctx: ResolveCtx): ThisExprParts {
+async function handleExprThis(
+  expr: string,
+  ctx: ResolveCtx
+): Promise<ThisExprParts> {
   // get current position (used in error messages)
   const pos: [number, number] = ctx.range ? ctx.range : [0, 99999];
   // only trim for now (as we want to get part with $this)
@@ -54,21 +60,26 @@ function handleExprThis(expr: string, ctx: ResolveCtx): ThisExprParts {
   const nodepath = divideNodepath(nodepathStr, pos);
   const handledNodepath = nodepath.map(removeEscChar);
   // handle conversion of keyValue parts into an object
-  const keyValue: Record<string, string> = {};
+  const keyValue: Record<string, unknown> = {};
   if (keyValueParts)
     for (const keyVal of keyValueParts) {
       const [key, value] = divideKeyValue(keyVal, pos);
       // remove wrapping escape char if present
       const handledKey = key && removeEscChar(key);
       const handledValue = value && removeEscChar(value);
+      // resolve value if it was expression
+      const resValue = await resolveUnknown(handledValue, true, true, ctx);
       // add to keyValue object
-      keyValue[handledKey] = handledValue;
+      keyValue[handledKey] = resValue;
     }
   // return parts
   return { nodepath: handledNodepath, keyValue };
 }
 
-function handleExprImport(expr: string, ctx: ResolveCtx): ImportExprParts {
+async function handleExprImport(
+  expr: string,
+  ctx: ResolveCtx
+): Promise<ImportExprParts> {
   // get current position (used in error messages)
   const pos: [number, number] = ctx.range ? ctx.range : [0, 99999];
   // only trim for now (as we want to get part with $import)
@@ -83,15 +94,17 @@ function handleExprImport(expr: string, ctx: ResolveCtx): ImportExprParts {
   const nodepath = divideNodepath(nodepathStr, pos);
   const handledNodepath = nodepath.map(removeEscChar);
   // handle conversion of keyValue parts into an object
-  const keyValue: Record<string, string> = {};
+  const keyValue: Record<string, unknown> = {};
   if (keyValueParts)
     for (const keyVal of keyValueParts) {
       const [key, value] = divideKeyValue(keyVal, pos);
       // remove wrapping escape char if present
       const handledKey = key && removeEscChar(key);
       const handledValue = value && removeEscChar(value);
+      // resolve value if it was expression
+      const resValue = await resolveUnknown(handledValue, true, true, ctx);
       // add to keyValue object
-      keyValue[handledKey] = handledValue;
+      keyValue[handledKey] = resValue;
     }
   // return parts
   return { nodepath: handledNodepath, keyValue };

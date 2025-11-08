@@ -1,3 +1,4 @@
+/// <reference path="./yaml-augment.d.ts" />
 export * from "yaml";
 
 export { LiveLoader } from "./core/liveLoader/liveLoader.js";

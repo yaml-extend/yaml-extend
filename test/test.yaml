@@ -2,13 +2,16 @@
 # %PRIVATE node
 %FILENAME file1
 %IMPORT alias "./test2.yaml"
+%LOCAL local {}
 ---
 node:
   nested Node:
     nestedNested.Node: value
+b: { $local.local }
 k: [1, 2, "ff"]
 kk:
   - 2
   - 3
-a: { $this.node }
-ff: $import.alias.node99
+  - { $local.local }
+a: [$this.kk local="$this.b local=$this.node"]
+ff: $import."alias".node99

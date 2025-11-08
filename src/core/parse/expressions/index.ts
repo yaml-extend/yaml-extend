@@ -22,7 +22,7 @@ export async function handleExpr(
   expr: string,
   ctx: ResolveCtx
 ): Promise<unknown> {
-  const exprData = handleExpression(expr, ctx);
+  const exprData = await handleExpression(expr, ctx);
   if (!exprData) {
     ctx.errors.push(
       new YAMLExprError(

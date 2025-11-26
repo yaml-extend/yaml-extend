@@ -17,7 +17,7 @@ import {
   TempParseState,
   ParseEntry,
 } from "./parseTypes.js";
-import { CircularDepHandler } from "./utils/circularDep.js";
+import { DependencyHandler } from "./utils/depHandler.js";
 import { resolve as resolvePath } from "path";
 import { getAllImports } from "./tokenizerParser/directives/index.js";
 import { YAMLError } from "../extendClasses/error.js";
@@ -25,7 +25,36 @@ import { YAMLError } from "../extendClasses/error.js";
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Main load functions.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+export async function parseExtend(
+  filepath: string,
+  options: Options & { returnState?: true },
+  state?: ParseState
+): Promise<{
+  parse: unknown;
+  errors: YAMLError[];
+  importedErrors: YAMLError[];
+  state: ParseState;
+}>;
+export async function parseExtend(
+  filepath: string,
+  options: Options & { returnState?: false | undefined },
+  state?: ParseState
+): Promise<{
+  parse: unknown;
+  errors: YAMLError[];
+  importedErrors: YAMLError[];
+  state: undefined;
+}>;
+export async function parseExtend(
+  filepath: string,
+  options?: Options & { returnState?: boolean | undefined },
+  state?: ParseState
+): Promise<{
+  parse: unknown;
+  errors: YAMLError[];
+  importedErrors: YAMLError[];
+  state: ParseState | undefined;
+}>;
 /**
  *
  * @param filepath - Path of YAML file in filesystem.
@@ -41,6 +70,7 @@ export async function parseExtend(
   parse: unknown;
   errors: YAMLError[];
   importedErrors: YAMLError[];
+  state: ParseState | undefined;
 }> {
   // init state and temp state
   const s = initState(state);
@@ -56,18 +86,24 @@ export async function parseExtend(
         parse: undefined,
         errors: ts.errors,
         importedErrors: ts.importedErrors,
+        state: ts.options.returnState ? s : undefined,
       };
 
     // read file and add source and lineStarts to tempState
     ts.source = await readFile(ts.resolvedPath, { encoding: "utf8" });
     ts.lineStarts = getLineStarts(ts.source);
 
-    // get module cache
+    // handle module cache
     await handleModuleCache(s, ts);
 
     // check if load with same passed params is present in the cache and return it if present
-    const cachedParse = getParseEntery(s, ts.resolvedPath, ts.options.params);
-    if (cachedParse !== undefined) return cachedParse;
+    const comParams = {
+      ...(ts.options.params ?? {}),
+      ...(ts.options.universalParams ?? {}),
+    };
+    const cachedParse = getParseEntery(s, ts.resolvedPath, comParams);
+    if (cachedParse !== undefined)
+      return { ...cachedParse, state: ts.options.returnState ? s : undefined };
 
     // load imports before preceeding in resolving this module
     await handleImports(s, ts);
@@ -97,8 +133,9 @@ export async function parseExtend(
     // add parse entery to the cache
     setParseEntery(s, ts, parseEntery);
 
-    return parseEntery;
+    return { ...parseEntery, state: ts.options.returnState ? s : undefined };
   } finally {
+    s.dependency.purge();
     s.depth--;
   }
 }
@@ -117,8 +154,7 @@ export function initState(state?: ParseState): ParseState {
   if (state) return state;
   return {
     cache: new Map(),
-    parsedPaths: new Set(),
-    circularDep: new CircularDepHandler(),
+    dependency: new DependencyHandler(),
     depth: 0,
   };
 }

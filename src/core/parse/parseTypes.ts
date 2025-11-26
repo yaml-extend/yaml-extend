@@ -10,7 +10,7 @@ import type {
 } from "yaml";
 import type { YAMLError } from "../extendClasses/error.js";
 import type { Directives, TextToken } from "./tokenizer/tokenizerTypes.js";
-import type { CircularDepHandler } from "./utils/circularDep.js";
+import type { DependencyHandler } from "./utils/depHandler.js";
 import type { ParseExtend } from "./index.js";
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -33,9 +33,11 @@ export type Resolve = (
  * State object generated for each parse function execution or live loader. Persistant state and hold data generated from parsing YAML file.
  */
 export type ParseState = {
+  /** Cache that hold data for each module. */
   cache: Cache;
-  parsedPaths: Set<string>;
-  circularDep: CircularDepHandler;
+  /** Class to handle dependency in modules. */
+  dependency: DependencyHandler;
+  /** Internally used only. */
   depth: number;
 };
 
@@ -79,6 +81,8 @@ export type ExtendParseOptions = {
   universalParams?: Record<string, unknown>;
   /** Boolean to indicate if tags should be resolved or ignored. inherited and affect imported YAML files as well. */
   ignoreTags?: boolean;
+  /** Boolean to indicate if state object should be returned and persisted. */
+  returnState?: boolean;
 };
 
 /**
@@ -113,7 +117,7 @@ export type ModuleCache = {
    * Map from params-hash → ParamLoadEntry.
    * Use the hash of the params (string) as the map key so different param sets map to their respective resolved load results.
    */
-  loadByParamHash: Map<string, ParseEntry>;
+  parseCache: Map<string, ParseEntry>;
   /** Object that holds tokens of directives to be used in parsing. */
   directives: Directives;
   /** Absolute or resolved filesystem path of the module. */

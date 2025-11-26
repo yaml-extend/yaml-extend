@@ -14,6 +14,9 @@ import {
   YAMLWarning as OrigYAMLWarning,
 } from "yaml";
 
+/////////////////////////////////////////////////////////////////////////
+// Internal functions only to interact with cache
+
 /**
  * Function to handle cache of YAML file, it initialize a dedicated module cache if not defined yet or if the file changed.
  * @param state - State object from first parse if this YAML file is imported.
@@ -23,8 +26,8 @@ export async function handleModuleCache(
   state: ParseState,
   tempState: TempParseState
 ): Promise<void> {
-  // add path to parsedPaths
-  state.parsedPaths.add(tempState.resolvedPath);
+  // add path to dependcy class
+  state.dependency.addDep(tempState.resolvedPath, state.depth === 1);
 
   // check if module is present in cache, if not init it and return
   const moduleCache = state.cache.get(tempState.resolvedPath);
@@ -58,7 +61,7 @@ async function initModuleCache(state: ParseState, tempState: TempParseState) {
 
   // generate new cache
   const cache: ModuleCache = {
-    loadByParamHash: new Map(),
+    parseCache: new Map(),
     directives,
     resolvedPath: tempState.resolvedPath,
     sourceHash,
@@ -120,9 +123,26 @@ export function setParseEntery(
   // hash params
   const hashedParams = hashParams(comParams);
 
+  // make reference for parse cache
+  const parseCache = moduleCache.parseCache;
+
+  // if number of cached enteries exceeded 100 remove first 25 enteries
+  if (parseCache.size > 50) {
+    const iterator = parseCache.keys();
+
+    for (let i = 0; i < 25; i++) {
+      const key = iterator.next().value;
+      if (key === undefined) break;
+      parseCache.delete(key);
+    }
+  }
+
   // set entery in cache
-  moduleCache.loadByParamHash.set(hashedParams, parseEntery);
+  parseCache.set(hashedParams, parseEntery);
 }
+
+/////////////////////////////////////////////////////////////////////////
+// Internal and External functions to interact with cache
 
 /**
  * Function to get cache of specific YAML file from state.
@@ -138,11 +158,10 @@ export function getModuleCache(
 }
 
 /**
- *
+ * Function to get parse entery for specific YAML file with specific params value.
  * @param state - State object from first parse if this YAML file is imported.
  * @param filepath - Path of YAML file in filesystem.
- * @param params - Params object to defined values of params in the parsed YAML file, note that it only affect YAML file at passed filepath and not passed to imported files.
- * @param ignoreTags
+ * @param params - All params passed to parseExtend during parsing YAML file, includes 'params' and 'universalParams' in options.
  * @returns
  */
 export function getParseEntery(
@@ -155,15 +174,26 @@ export function getParseEntery(
 
   // hash params and get cache of this load with params
   const hashedParams = hashParams(params ?? {});
-  return moduleCache.loadByParamHash.get(hashedParams);
+  return moduleCache.parseCache.get(hashedParams);
 }
 
 /**
- * Function to delete a module from load id, using in live loader.
- * @param loadId - Unique id that identifies this load.
- * @param modulePath - Url path of the module that will be deleted.
+ * Function to reset cache. it's advised to call it when options which affect output as 'schema', 'params', 'universalParams' and 'ignoreTags'
+ * is changed to avoid stale parse enteries
+ * @param state - State object from first parse if this YAML file is imported.
  */
-export function deleteModuleCache(state: ParseState, path: string): void {
-  state.cache.delete(path);
-  state.parsedPaths.delete(path);
+export function resetCache(state: ParseState): void {
+  state.dependency.reset();
+  state.cache = new Map();
+}
+
+/**
+ * Function to purge cache and delete paths that are no longer loaded.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param paths - Paths that are no longer entry paths.
+ */
+export function purgeCache(state: ParseState, paths?: string[]): string[] {
+  const deletedPaths = state.dependency.purge(paths);
+  for (const p of deletedPaths) state.cache.delete(p);
+  return deletedPaths;
 }

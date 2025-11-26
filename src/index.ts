@@ -15,5 +15,14 @@ export {
 
 export { parseExtend } from "./core/parse/index.js";
 export * from "./core/extendClasses/error.js";
+export { LiveParser } from "./core/liveParser/index.js";
 
-export type { ExtendParseOptions, Options } from "./core/parse/parseTypes.js";
+export type {
+  ExtendParseOptions,
+  Options,
+  ParseState,
+  ParseEntry,
+  ModuleCache,
+  Cache,
+} from "./core/parse/parseTypes.js";
+export type * from "./core/parse/tokenizer/tokenizerTypes.js";

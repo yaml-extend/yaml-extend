@@ -107,8 +107,8 @@ export function mergePath(
   const verified = verifyPath(resPath, tempState);
   if (!verified) return { status: false, value: undefined };
 
-  // handle circular dependency check
-  const circularDep = state.circularDep.addDep(modulePath, resPath);
+  // bind nodes and check for circular dependencies
+  const circularDep = state.dependency.bindPaths(modulePath, resPath);
   if (circularDep) {
     tempState.errors.push(
       new YAMLExprError(

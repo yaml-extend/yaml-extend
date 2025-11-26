@@ -76,8 +76,8 @@ function mergePath(targetPath, state, tempState) {
     const verified = verifyPath(resPath, tempState);
     if (!verified)
         return { status: false, value: undefined };
-    // handle circular dependency check
-    const circularDep = state.circularDep.addDep(modulePath, resPath);
+    // bind nodes and check for circular dependencies
+    const circularDep = state.dependency.bindPaths(modulePath, resPath);
     if (circularDep) {
         tempState.errors.push(new YAMLExprError([0, 99999], "", `Circular dependency detected: ${circularDep.join(" -> ")}.`));
         return { status: false, value: undefined };
@@ -1164,6 +1164,8 @@ function getAllLocals(tokens, validCheck) {
     return locals;
 }
 
+/////////////////////////////////////////////////////////////////////////
+// Internal functions only to interact with cache
 /**
  * Function to handle cache of YAML file, it initialize a dedicated module cache if not defined yet or if the file changed.
  * @param state - State object from first parse if this YAML file is imported.
@@ -1171,8 +1173,8 @@ function getAllLocals(tokens, validCheck) {
  */
 async function handleModuleCache(state, tempState) {
     var _a;
-    // add path to parsedPaths
-    state.parsedPaths.add(tempState.resolvedPath);
+    // add path to dependcy class
+    state.dependency.addDep(tempState.resolvedPath, state.depth === 1);
     // check if module is present in cache, if not init it and return
     const moduleCache = state.cache.get(tempState.resolvedPath);
     if (!moduleCache) {
@@ -1202,7 +1204,7 @@ async function initModuleCache(state, tempState) {
     const AST = handleAST(tempState);
     // generate new cache
     const cache = {
-        loadByParamHash: new Map(),
+        parseCache: new Map(),
         directives,
         resolvedPath: tempState.resolvedPath,
         sourceHash,
@@ -1257,15 +1259,26 @@ function setParseEntery(state, tempState, parseEntery) {
         return;
     // hash params
     const hashedParams = hashParams(comParams);
+    // make reference for parse cache
+    const parseCache = moduleCache.parseCache;
+    // if number of cached enteries exceeded 100 remove first 25 enteries
+    if (parseCache.size > 50) {
+        const iterator = parseCache.keys();
+        for (let i = 0; i < 25; i++) {
+            const key = iterator.next().value;
+            if (key === undefined)
+                break;
+            parseCache.delete(key);
+        }
+    }
     // set entery in cache
-    moduleCache.loadByParamHash.set(hashedParams, parseEntery);
+    parseCache.set(hashedParams, parseEntery);
 }
 /**
- *
+ * Function to get parse entery for specific YAML file with specific params value.
  * @param state - State object from first parse if this YAML file is imported.
  * @param filepath - Path of YAML file in filesystem.
- * @param params - Params object to defined values of params in the parsed YAML file, note that it only affect YAML file at passed filepath and not passed to imported files.
- * @param ignoreTags
+ * @param params - All params passed to parseExtend during parsing YAML file, includes 'params' and 'universalParams' in options.
  * @returns
  */
 function getParseEntery(state, filepath, params) {
@@ -1274,7 +1287,27 @@ function getParseEntery(state, filepath, params) {
         return;
     // hash params and get cache of this load with params
     const hashedParams = hashParams(params !== null && params !== void 0 ? params : {});
-    return moduleCache.loadByParamHash.get(hashedParams);
+    return moduleCache.parseCache.get(hashedParams);
+}
+/**
+ * Function to reset cache. it's advised to call it when options which affect output as 'schema', 'params', 'universalParams' and 'ignoreTags'
+ * is changed to avoid stale parse enteries
+ * @param state - State object from first parse if this YAML file is imported.
+ */
+function resetCache(state) {
+    state.dependency.reset();
+    state.cache = new Map();
+}
+/**
+ * Function to purge cache and delete paths that are no longer loaded.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param paths - Paths that are no longer entry paths.
+ */
+function purgeCache(state, paths) {
+    const deletedPaths = state.dependency.purge(paths);
+    for (const p of deletedPaths)
+        state.cache.delete(p);
+    return deletedPaths;
 }
 
 // basic helpers
@@ -2776,55 +2809,144 @@ function filterPrivate(parse, tempState, cache) {
 }
 
 /**
- * Class to handle circular dependency checks.
+ * Class to handle dependency checks.
  */
-class CircularDepHandler {
+class DependencyHandler {
     constructor() {
-        /** adjacency list: node -> set of dependencies (edges node -> dep) */
-        this._graphs = new Map();
+        /** Set that holds: path -> set of dependencies paths. */
+        this.depGraphs = new Map();
+        /** Set that holds: path -> set of paths importing it. */
+        this.reverseDepGraphs = new Map();
+        /** All paths add to handler. */
+        this.paths = new Set();
+        /** Paths added as entery points. */
+        this.entryPaths = new Set();
     }
     /**
-     * Method to handle checking of the circular dependency.
+     * Method to remove any path that is not currently being imported by entery paths.
+     * @param paths - Optional paths to delete from entery paths before purging.
+     * @returns Array of paths that are deleted.
+     */
+    purge(paths) {
+        // if paths passed deleted them from entery paths
+        if (paths)
+            for (const p of paths)
+                this.entryPaths.delete(p);
+        // define paths still used (active)
+        const activePaths = new Set();
+        for (const p of this.entryPaths) {
+            activePaths.add(p);
+            this._recursiveGetDep(p, activePaths);
+        }
+        // delete any node that is no longer active
+        let deletedPaths = [];
+        for (const p of this.paths)
+            if (!activePaths.has(p)) {
+                this.deleteDep(p);
+                deletedPaths.push(p);
+            }
+        return deletedPaths;
+    }
+    /**
+     * Method to reset dependency class state.
+     * @returns Array of deleted paths.
+     */
+    reset() {
+        const paths = Array.from(this.paths);
+        this.depGraphs = new Map();
+        this.reverseDepGraphs = new Map();
+        this.paths = new Set();
+        this.entryPaths = new Set();
+        return paths;
+    }
+    getDeps(node) {
+        return Array.from(this._recursiveGetDep(node));
+    }
+    /**
+     * Method to delete path from graph. It's not advised to use it, use purge instead as manual deletion can break the graphs state.
+     * @param path - Path that will be deleted.
+     */
+    deleteDep(path) {
+        var _a, _b;
+        // delete any edges
+        const graph = this.depGraphs.get(path);
+        const reverseGraph = this.reverseDepGraphs.get(path);
+        if (graph)
+            for (const p of graph)
+                (_a = this.reverseDepGraphs.get(p)) === null || _a === void 0 ? void 0 : _a.delete(path);
+        if (reverseGraph)
+            for (const p of reverseGraph)
+                (_b = this.depGraphs.get(p)) === null || _b === void 0 ? void 0 : _b.delete(path);
+        // delete state of this path
+        this.depGraphs.delete(path);
+        this.reverseDepGraphs.delete(path);
+        this.paths.delete(path);
+        this.entryPaths.delete(path);
+    }
+    /**
+     * Method to add new paths.
+     * @param path - Path that will be added.
+     * @param entery - Boolean to indicate if path is an entry path.
+     */
+    addDep(path, entery) {
+        if (!this.depGraphs.has(path))
+            this.depGraphs.set(path, new Set());
+        if (!this.reverseDepGraphs.has(path))
+            this.reverseDepGraphs.set(path, new Set());
+        this.paths.add(path);
+        if (entery)
+            this.entryPaths.add(path);
+    }
+    /**
+     * Method to bind paths and check for circular dependency. Note that it will abort bind if circular dependency is found.
      * @param modulePath - Path of the current module.
      * @param targetPath - Path of the imported module.
-     * @returns - null if no circular dependency is present or array of paths or the circular dependency.
+     * @returns - null if no circular dependency is present or array of paths of the circular dependency.
      */
-    addDep(modulePath, targetPath) {
-        // ensure nodes exist
-        if (!this._graphs.has(modulePath))
-            this._graphs.set(modulePath, new Set());
-        // root/initial load — nothing to check
-        if (!targetPath)
-            return null;
-        if (!this._graphs.has(targetPath))
-            this._graphs.set(targetPath, new Set());
-        // add the edge modulePath -> targetPath
-        this._graphs.get(modulePath).add(targetPath);
-        // Now check if there's a path from targetPath back to modulePath.
-        // If so, we constructed a cycle.
-        const path = this._findPath(targetPath, modulePath, this._graphs);
+    bindPaths(modulePath, targetPath) {
+        // if two paths are the same return directly
+        if (modulePath === targetPath)
+            return [modulePath, targetPath];
+        // ensure paths exist
+        this.addDep(modulePath);
+        this.addDep(targetPath);
+        // get module path graph
+        const graph = this.depGraphs.get(modulePath);
+        const reverseGraph = this.reverseDepGraphs.get(targetPath);
+        // add modulePath -> targetPath in graph
+        graph.add(targetPath);
+        // add targetPath -> modulePath in reverse graph
+        reverseGraph.add(modulePath);
+        // Now check if there's a path from targetPath back to modulePath. If so, we constructed a cycle. delete association and return cycle
+        const path = this._findPath(targetPath, modulePath);
         if (path) {
-            // path is [targetPath, ..., modulePath]
-            // cycle: [modulePath, targetPath, ..., modulePath]
+            graph.delete(targetPath);
+            reverseGraph.delete(modulePath);
+            // path is [targetPath, ..., modulePath], cycle: [modulePath, targetPath, ..., modulePath]
             return [modulePath, ...path];
         }
         return null;
     }
-    /**
-     * Method to delete dependency node (path of a module) from graph.
-     * @param modulePath - Path that will be deleted.
-     */
-    deleteDep(modulePath) {
-        // remove outgoing edges (delete node key)
-        if (this._graphs.has(modulePath))
-            this._graphs.delete(modulePath);
-        // remove incoming edges from other nodes
-        for (const [k, deps] of this._graphs.entries()) {
-            deps.delete(modulePath);
+    /** Method to recursively add dependencies of entery path to a set. */
+    _recursiveGetDep(node, set = new Set(), visited = new Set()) {
+        // safe guard from infinite loops
+        if (visited.has(node))
+            return set;
+        visited.add(node);
+        // get graph for this node
+        const g = this.depGraphs.get(node);
+        if (!g)
+            return set;
+        // add dependencies of graph to the set and call the recrusive call for them as well
+        for (const d of g) {
+            set.add(d);
+            this._recursiveGetDep(d, set, visited);
         }
+        // return set
+        return set;
     }
     /** Method to find path of circular dependency. */
-    _findPath(start, target, graph) {
+    _findPath(start, target) {
         const visited = new Set();
         const path = [];
         const dfs = (node) => {
@@ -2834,7 +2956,7 @@ class CircularDepHandler {
             path.push(node);
             if (node === target)
                 return true;
-            const neighbors = graph.get(node);
+            const neighbors = this.depGraphs.get(node);
             if (neighbors) {
                 for (const n of neighbors) {
                     if (dfs(n))
@@ -2848,9 +2970,6 @@ class CircularDepHandler {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Main load functions.
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**
  *
  * @param filepath - Path of YAML file in filesystem.
@@ -2859,6 +2978,7 @@ class CircularDepHandler {
  * @returns Object that hold parse value along with errors thrown in this YAML file and errors thrown in imported YAML files.
  */
 async function parseExtend(filepath, options = {}, state) {
+    var _a, _b;
     // init state and temp state
     const s = initState(state);
     const ts = initTempState(filepath, options);
@@ -2871,16 +2991,21 @@ async function parseExtend(filepath, options = {}, state) {
                 parse: undefined,
                 errors: ts.errors,
                 importedErrors: ts.importedErrors,
+                state: ts.options.returnState ? s : undefined,
             };
         // read file and add source and lineStarts to tempState
         ts.source = await promises.readFile(ts.resolvedPath, { encoding: "utf8" });
         ts.lineStarts = getLineStarts(ts.source);
-        // get module cache
+        // handle module cache
         await handleModuleCache(s, ts);
         // check if load with same passed params is present in the cache and return it if present
-        const cachedParse = getParseEntery(s, ts.resolvedPath, ts.options.params);
+        const comParams = {
+            ...((_a = ts.options.params) !== null && _a !== void 0 ? _a : {}),
+            ...((_b = ts.options.universalParams) !== null && _b !== void 0 ? _b : {}),
+        };
+        const cachedParse = getParseEntery(s, ts.resolvedPath, comParams);
         if (cachedParse !== undefined)
-            return cachedParse;
+            return { ...cachedParse, state: ts.options.returnState ? s : undefined };
         // load imports before preceeding in resolving this module
         await handleImports(s, ts);
         // resolve AST
@@ -2902,9 +3027,10 @@ async function parseExtend(filepath, options = {}, state) {
         };
         // add parse entery to the cache
         setParseEntery(s, ts, parseEntery);
-        return parseEntery;
+        return { ...parseEntery, state: ts.options.returnState ? s : undefined };
     }
     finally {
+        s.dependency.purge();
         s.depth--;
     }
 }
@@ -2920,8 +3046,7 @@ function initState(state) {
         return state;
     return {
         cache: new Map(),
-        parsedPaths: new Set(),
-        circularDep: new CircularDepHandler(),
+        dependency: new DependencyHandler(),
         depth: 0,
     };
 }
@@ -2972,10 +3097,80 @@ async function handleImports(state, tempState) {
     }
 }
 
+/**
+ * Class to preserve state along parsing multiple entry paths.
+ */
+class LiveParser {
+    /**
+     * @param options - Options object passed to control parser behavior.
+     * @param intervalPurge - Should set an interval to purge un-used path caches.
+     */
+    constructor(options, intervalPurge = true) {
+        this._isDestroyed = false;
+        this._options = options !== null && options !== void 0 ? options : {};
+        this.state = initState();
+        if (intervalPurge)
+            this._purgeInterval = setInterval(() => {
+                purgeCache(this.state);
+            }, 10000);
+    }
+    /**
+     * Method to set options, note that cache will be reseted every time options change.
+     * @param options - Options object passed to control parser behavior.
+     */
+    setOptions(options) {
+        if (this._isDestroyed)
+            return;
+        this._options = { ...this._options, ...options };
+        resetCache(this.state);
+    }
+    /**
+     * Method to parse YAML file at specific path.
+     * @param path - Path that will be parsed.
+     * @returns Parse value of this path.
+     */
+    async parse(path) {
+        if (this._isDestroyed)
+            throw new Error("LiveParser class is destroyed.");
+        // add path as entry point
+        this.state.dependency.addDep(path, true);
+        // check cache, if present return directly
+        const cached = getParseEntery(this.state, path, this._options.universalParams);
+        if (cached)
+            return {
+                ...cached,
+                state: this._options.returnState ? this.state : undefined,
+            };
+        // parse and return value
+        return await parseExtend(path, this._options, this.state);
+    }
+    /**
+     * Method to delete path as an entry point.
+     * @param path - Path the will be deleted.
+     * @returns Boolean to indicate if path is fully removed from cache of is still preserved as an imported path.
+     */
+    purge(path) {
+        if (this._isDestroyed)
+            throw new Error("LiveParser class is destroyed.");
+        const deletedPaths = purgeCache(this.state, [path]);
+        return deletedPaths.includes(path);
+    }
+    destroy() {
+        if (this._isDestroyed)
+            return;
+        this.state = null;
+        this._options = null;
+        if (this._purgeInterval)
+            clearInterval(this._purgeInterval);
+        this._isDestroyed = true;
+    }
+}
+
 Object.defineProperty(exports, "Schema", {
     enumerable: true,
     get: function () { return yaml.Schema; }
 });
+exports.LiveParser = LiveParser;
 exports.YAMLError = YAMLError;
 exports.YAMLExprError = YAMLExprError;
 exports.YAMLParseError = YAMLParseError;

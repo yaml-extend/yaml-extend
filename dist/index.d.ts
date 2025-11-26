@@ -1,6 +1,13 @@
 import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, DocumentOptions, SchemaOptions, ToJSOptions, Scalar, Alias, YAMLMap, YAMLSeq } from 'yaml';
 export { CollectionTag, CreateNodeOptions, DocumentOptions, ParseOptions, ScalarTag, Schema, SchemaOptions, TagId, Tags, ToJSOptions, ToStringOptions } from 'yaml';
 
+declare function tokenizeText(input: string, keyValueTok: KeyValueToken | undefined, tempState?: TempParseState): TextToken[];
+type TokenizeTextFunc = typeof tokenizeText;
+
+/**
+ * Types of data in YAML
+ */
+type YAMLDataTypes = "scalar" | "map" | "seq";
 /**
  * Object that hold position of token inside single line.
  */
@@ -135,6 +142,47 @@ type PrivateDirectiveToken = RawDirectiveToken & {
     }>;
 };
 /**
+ * General type that holds all directive tokens.
+ */
+type DirectiveToken = TagDirectiveToken | YamlDirectiveToken | FilenameDirectiveToken | ImportDirectiveToken | LocalDirectiveToken | ParamDirectiveToken | PrivateDirectiveToken;
+/**
+ * Helper to get specific type of directive token from general type.
+ */
+type DirectiveOf<T extends DirectiveToken["type"]> = Extract<DirectiveToken, {
+    type: T;
+}>;
+/**
+ * Minimal state used in scalar tokenizer step.
+ */
+type BasicState = {
+    input: string;
+    len: number;
+    pos: number;
+    line: number;
+    absLineStart: number;
+};
+/**
+ * State of text step of scalar tokenizer
+ */
+type TextTokenizerState = BasicState;
+/**
+ * State of expression step of scalar tokenizer
+ */
+type ExprTokenizerState = BasicState & {
+    afterParen: boolean;
+    afterWhiteSpace: boolean;
+};
+/**
+ * State of arguments step of scalar tokenizer
+ */
+type ArgsTokenizerState = BasicState;
+/**
+ * State of keyValue step of scalar tokenizer
+ */
+type KeyValueTokenizerState = BasicState & {
+    afterEqual: boolean;
+};
+/**
  * Token types from text step of scalar tokenizer
  */
 declare enum TextTokenType {
@@ -220,35 +268,86 @@ declare class YAMLWarning extends YAMLError {
 }
 
 /**
- * Class to handle circular dependency checks.
+ * Class to handle dependency checks.
  */
-declare class CircularDepHandler {
-    /** adjacency list: node -> set of dependencies (edges node -> dep) */
-    private _graphs;
+declare class DependencyHandler {
+    /** Set that holds: path -> set of dependencies paths. */
+    depGraphs: Map<string, Set<string>>;
+    /** Set that holds: path -> set of paths importing it. */
+    reverseDepGraphs: Map<string, Set<string>>;
+    /** All paths add to handler. */
+    paths: Set<string>;
+    /** Paths added as entery points. */
+    entryPaths: Set<string>;
     /**
-     * Method to handle checking of the circular dependency.
+     * Method to remove any path that is not currently being imported by entery paths.
+     * @param paths - Optional paths to delete from entery paths before purging.
+     * @returns Array of paths that are deleted.
+     */
+    purge(paths?: string[]): string[];
+    /**
+     * Method to reset dependency class state.
+     * @returns Array of deleted paths.
+     */
+    reset(): string[];
+    getDeps(node: string): string[];
+    /**
+     * Method to delete path from graph. It's not advised to use it, use purge instead as manual deletion can break the graphs state.
+     * @param path - Path that will be deleted.
+     */
+    deleteDep(path: string): void;
+    /**
+     * Method to add new paths.
+     * @param path - Path that will be added.
+     * @param entery - Boolean to indicate if path is an entry path.
+     */
+    addDep(path: string, entery?: boolean): void;
+    /**
+     * Method to bind paths and check for circular dependency. Note that it will abort bind if circular dependency is found.
      * @param modulePath - Path of the current module.
      * @param targetPath - Path of the imported module.
-     * @returns - null if no circular dependency is present or array of paths or the circular dependency.
+     * @returns - null if no circular dependency is present or array of paths of the circular dependency.
      */
-    addDep(modulePath: string, targetPath: string | undefined): string[] | null;
-    /**
-     * Method to delete dependency node (path of a module) from graph.
-     * @param modulePath - Path that will be deleted.
-     */
-    deleteDep(modulePath: string): void;
+    bindPaths(modulePath: string, targetPath: string): string[] | null;
+    /** Method to recursively add dependencies of entery path to a set. */
+    private _recursiveGetDep;
     /** Method to find path of circular dependency. */
     private _findPath;
 }
 
 /**
+ * Function used to resolve the output of "yaml" lib to allow extended modules.
+ */
+type Resolve = (item: unknown, anchored: boolean, state: ParseState, tempState: TempParseState) => Promise<unknown>;
+/**
  * State object generated for each parse function execution or live loader. Persistant state and hold data generated from parsing YAML file.
  */
 type ParseState = {
+    /** Cache that hold data for each module. */
     cache: Cache;
-    parsedPaths: Set<string>;
-    circularDep: CircularDepHandler;
+    /** Class to handle dependency in modules. */
+    dependency: DependencyHandler;
+    /** Internally used only. */
     depth: number;
+};
+/**
+ * Temporary state only needed during parsing and resolving YAML file, specific for each parse execution.
+ */
+type TempParseState = {
+    source: string;
+    options: Options & {
+        basePath: string;
+    };
+    errors: YAMLError[];
+    importedErrors: YAMLError[];
+    resolvedPath: string;
+    filename: string;
+    range: [number, number];
+    anchors: Map<string, unknown>;
+    locals: Record<string, unknown>[];
+    lineStarts: number[];
+    resolveFunc: Resolve;
+    parseFunc: ParseExtend;
 };
 /**
  * Additional options that can be passed to parse function used by extend module.
@@ -269,6 +368,8 @@ type ExtendParseOptions = {
     universalParams?: Record<string, unknown>;
     /** Boolean to indicate if tags should be resolved or ignored. inherited and affect imported YAML files as well. */
     ignoreTags?: boolean;
+    /** Boolean to indicate if state object should be returned and persisted. */
+    returnState?: boolean;
 };
 /**
  * Options parse to parseExtend function.
@@ -293,7 +394,7 @@ type ModuleCache = {
      * Map from params-hash → ParamLoadEntry.
      * Use the hash of the params (string) as the map key so different param sets map to their respective resolved load results.
      */
-    loadByParamHash: Map<string, ParseEntry>;
+    parseCache: Map<string, ParseEntry>;
     /** Object that holds tokens of directives to be used in parsing. */
     directives: Directives;
     /** Absolute or resolved filesystem path of the module. */
@@ -313,18 +414,65 @@ type ModuleCache = {
  */
 type Cache = Map<string, ModuleCache>;
 
-/**
- *
- * @param filepath - Path of YAML file in filesystem.
- * @param options - Options object passed to control parser behavior.
- * @param state - For internal use don't pass any thing here.
- * @returns Object that hold parse value along with errors thrown in this YAML file and errors thrown in imported YAML files.
- */
-declare function parseExtend(filepath: string, options?: Options, state?: ParseState): Promise<{
+declare function parseExtend(filepath: string, options: Options & {
+    returnState?: true;
+}, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
+    state: ParseState;
 }>;
+declare function parseExtend(filepath: string, options: Options & {
+    returnState?: false | undefined;
+}, state?: ParseState): Promise<{
+    parse: unknown;
+    errors: YAMLError[];
+    importedErrors: YAMLError[];
+    state: undefined;
+}>;
+declare function parseExtend(filepath: string, options?: Options & {
+    returnState?: boolean | undefined;
+}, state?: ParseState): Promise<{
+    parse: unknown;
+    errors: YAMLError[];
+    importedErrors: YAMLError[];
+    state: ParseState | undefined;
+}>;
+type ParseExtend = typeof parseExtend;
 
-export { YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
-export type { ErrorCode, ErrorName, ExprErrorCode, ExtendParseOptions, Options };
+/**
+ * Class to preserve state along parsing multiple entry paths.
+ */
+declare class LiveParser {
+    /** State object of the parser. It should never be mutated. */
+    state: ParseState;
+    private _options;
+    private _purgeInterval;
+    private _isDestroyed;
+    /**
+     * @param options - Options object passed to control parser behavior.
+     * @param intervalPurge - Should set an interval to purge un-used path caches.
+     */
+    constructor(options?: Omit<Options, "params">, intervalPurge?: boolean);
+    /**
+     * Method to set options, note that cache will be reseted every time options change.
+     * @param options - Options object passed to control parser behavior.
+     */
+    setOptions(options: Omit<Options, "params">): void;
+    /**
+     * Method to parse YAML file at specific path.
+     * @param path - Path that will be parsed.
+     * @returns Parse value of this path.
+     */
+    parse(path: string): Promise<Awaited<ReturnType<ParseExtend>>>;
+    /**
+     * Method to delete path as an entry point.
+     * @param path - Path the will be deleted.
+     * @returns Boolean to indicate if path is fully removed from cache of is still preserved as an imported path.
+     */
+    purge(path: string): boolean;
+    destroy(): void;
+}
+
+export { ArgsTokenType, ExprTokenType, KeyValueTokenType, LiveParser, TextTokenType, YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
+export type { ArgsToken, ArgsTokenizerState, BasicState, Cache, DirectiveOf, DirectiveToken, Directives, ErrorCode, ErrorName, ExprErrorCode, ExprToken, ExprTokenizerState, ExtendLinePos, ExtendParseOptions, FilenameDirectiveToken, ImportDirectiveToken, ImportParamInfo, KeyValueToken, KeyValueTokenizerState, LocalDirectiveToken, ModuleCache, Options, ParamDirectiveToken, ParseEntry, ParseState, Pos, PrivateDirectiveToken, RawToken, TagDirectiveToken, TextToken, TextTokenizerState, TokenizeTextFunc, YAMLDataTypes, YamlDirectiveToken };

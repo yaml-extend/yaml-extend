@@ -8,6 +8,11 @@ import {
 import { parseDocument } from "yaml";
 import { tokenizeDirectives } from "../tokenizer/directives/index.js";
 import { getFilename } from "../tokenizerParser/directives/index.js";
+import { YAMLParseError, YAMLWarning } from "../../extendClasses/error.js";
+import {
+  YAMLParseError as OrigYAMLParseError,
+  YAMLWarning as OrigYAMLWarning,
+} from "yaml";
 
 /**
  * Function to handle cache of YAML file, it initialize a dedicated module cache if not defined yet or if the file changed.
@@ -49,7 +54,8 @@ async function initModuleCache(state: ParseState, tempState: TempParseState) {
   // get cache data
   const sourceHash = hashStr(tempState.resolvedPath);
   const directives = tokenizeDirectives(tempState.source, tempState);
-  const AST = parseDocument(tempState.source, tempState.options).contents;
+  const AST = handleAST(tempState);
+
   // generate new cache
   const cache: ModuleCache = {
     loadByParamHash: new Map(),
@@ -64,6 +70,29 @@ async function initModuleCache(state: ParseState, tempState: TempParseState) {
   //  add directive errors and filename to tempState
   tempState.errors.push(...cache.directives.errors);
   tempState.filename = getFilename(directives.filename, true) ?? "";
+}
+
+function handleAST(tempState: TempParseState) {
+  // pass source and options to yaml lib
+  const AST = parseDocument(tempState.source, tempState.options);
+  // add errors
+  const errors = AST.errors;
+  for (const e of errors) {
+    let error: YAMLParseError | YAMLWarning | undefined;
+    if (e instanceof OrigYAMLParseError)
+      error = new YAMLParseError(e.pos, e.code, e.message);
+    if (e instanceof OrigYAMLWarning)
+      error = new YAMLWarning(e.pos, e.code, e.message);
+    if (error) {
+      error.cause = e.cause;
+      error.linePos = e.linePos;
+      error.name = e.name;
+      error.stack = e.stack;
+      tempState.errors.push(error);
+    }
+  }
+  // return contents
+  return AST.contents;
 }
 
 /**

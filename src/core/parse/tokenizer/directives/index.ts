@@ -3,7 +3,7 @@ import {
   DirectiveToken,
   RawToken,
   ImportParamInfo,
-  LinePos,
+  ExtendLinePos,
   Pos,
   Directives,
 } from "../tokenizerTypes.js";
@@ -314,7 +314,9 @@ export function parseDirectiveFromTokens(
   if (!tokens || tokens.length === 0) return null;
 
   // calc pos and linePos of the hole directive
-  const linePos: LinePos[] = [{ start: 0, end: rawLine.length, line: lineNum }];
+  const linePos: ExtendLinePos[] = [
+    { start: 0, end: rawLine.length, line: lineNum },
+  ];
   const pos: Pos = { start: strIdx, end: strIdx + rawLine.length };
 
   // handle baseTok

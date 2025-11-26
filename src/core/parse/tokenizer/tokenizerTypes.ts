@@ -12,7 +12,7 @@ export type YAMLDataTypes = "scalar" | "map" | "seq";
 /**
  * Object that hold position of token inside single line.
  */
-export type LinePos = { line: number; start: number; end: number };
+export type ExtendLinePos = { line: number; start: number; end: number };
 
 /**
  * Object that hold absolute position of token inside a text.
@@ -32,7 +32,7 @@ export type RawToken<T> = {
   /** Boolean to define if text was quoted or not. */
   quoted: boolean;
   /** Array of lines in which token spans along with it's position inside each line. */
-  linePos: LinePos[];
+  linePos: ExtendLinePos[];
   /** Absolute position of token in text */
   pos: Pos;
 };
@@ -60,7 +60,7 @@ export type Directives = {
 type RawDirectiveToken = {
   type: "TAG" | "YAML" | "FILENAME" | "IMPORT" | "PARAM" | "LOCAL" | "PRIVATE";
   rawLine: string;
-  linePos: LinePos[];
+  linePos: ExtendLinePos[];
   pos: Pos;
   valid: boolean;
   errors: YAMLExprError[];

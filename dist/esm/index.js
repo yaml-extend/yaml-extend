@@ -1,5 +1,5 @@
-import { YAMLError as YAMLError$1, parseDocument, YAMLMap, Scalar, YAMLSeq, Alias, Schema } from 'yaml';
-export * from 'yaml';
+import { YAMLError as YAMLError$1, parseDocument, YAMLParseError as YAMLParseError$1, YAMLWarning as YAMLWarning$1, YAMLMap, Scalar, YAMLSeq, Alias, Schema } from 'yaml';
+export { Schema } from 'yaml';
 import { readFile } from 'fs/promises';
 import { existsSync, realpathSync } from 'fs';
 import { parse, relative, dirname, resolve as resolve$1 } from 'path';
@@ -19,6 +19,16 @@ class YAMLError extends YAMLError$1 {
 class YAMLExprError extends YAMLError {
     constructor(pos, code, message) {
         super("YAMLExprError", pos, code, message);
+    }
+}
+class YAMLParseError extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLParseError", pos, code, message);
+    }
+}
+class YAMLWarning extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLWarning", pos, code, message);
     }
 }
 
@@ -745,7 +755,9 @@ function parseDirectiveFromTokens(tokens, rawLine, lineNum, strIdx) {
     if (!tokens || tokens.length === 0)
         return null;
     // calc pos and linePos of the hole directive
-    const linePos = [{ start: 0, end: rawLine.length, line: lineNum }];
+    const linePos = [
+        { start: 0, end: rawLine.length, line: lineNum },
+    ];
     const pos = { start: strIdx, end: strIdx + rawLine.length };
     // handle baseTok
     const rawBaseTok = tokens[0];
@@ -1186,7 +1198,7 @@ async function initModuleCache(state, tempState) {
     // get cache data
     const sourceHash = hashStr(tempState.resolvedPath);
     const directives = tokenizeDirectives(tempState.source, tempState);
-    const AST = parseDocument(tempState.source, tempState.options).contents;
+    const AST = handleAST(tempState);
     // generate new cache
     const cache = {
         loadByParamHash: new Map(),
@@ -1201,6 +1213,28 @@ async function initModuleCache(state, tempState) {
     //  add directive errors and filename to tempState
     tempState.errors.push(...cache.directives.errors);
     tempState.filename = (_a = getFilename(directives.filename, true)) !== null && _a !== void 0 ? _a : "";
+}
+function handleAST(tempState) {
+    // pass source and options to yaml lib
+    const AST = parseDocument(tempState.source, tempState.options);
+    // add errors
+    const errors = AST.errors;
+    for (const e of errors) {
+        let error;
+        if (e instanceof YAMLParseError$1)
+            error = new YAMLParseError(e.pos, e.code, e.message);
+        if (e instanceof YAMLWarning$1)
+            error = new YAMLWarning(e.pos, e.code, e.message);
+        if (error) {
+            error.cause = e.cause;
+            error.linePos = e.linePos;
+            error.name = e.name;
+            error.stack = e.stack;
+            tempState.errors.push(error);
+        }
+    }
+    // return contents
+    return AST.contents;
 }
 /**
  * Function to add parse entery to cache of specific YAML file.
@@ -2937,5 +2971,5 @@ async function handleImports(state, tempState) {
     }
 }
 
-export { YAMLExprError, parseExtend };
+export { YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
 //# sourceMappingURL=index.js.map

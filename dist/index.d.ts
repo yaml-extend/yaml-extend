@@ -1,10 +1,10 @@
 import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, DocumentOptions, SchemaOptions, ToJSOptions, Scalar, Alias, YAMLMap, YAMLSeq } from 'yaml';
-export * from 'yaml';
+export { CollectionTag, CreateNodeOptions, DocumentOptions, ParseOptions, ScalarTag, Schema, SchemaOptions, TagId, Tags, ToJSOptions, ToStringOptions } from 'yaml';
 
 /**
  * Object that hold position of token inside single line.
  */
-type LinePos = {
+type ExtendLinePos = {
     line: number;
     start: number;
     end: number;
@@ -29,7 +29,7 @@ type RawToken<T> = {
     /** Boolean to define if text was quoted or not. */
     quoted: boolean;
     /** Array of lines in which token spans along with it's position inside each line. */
-    linePos: LinePos[];
+    linePos: ExtendLinePos[];
     /** Absolute position of token in text */
     pos: Pos;
 };
@@ -52,7 +52,7 @@ type Directives = {
 type RawDirectiveToken = {
     type: "TAG" | "YAML" | "FILENAME" | "IMPORT" | "PARAM" | "LOCAL" | "PRIVATE";
     rawLine: string;
-    linePos: LinePos[];
+    linePos: ExtendLinePos[];
     pos: Pos;
     valid: boolean;
     errors: YAMLExprError[];
@@ -205,11 +205,17 @@ type ExprErrorCode = "";
 type ErrorCode = ErrorCode$1 | ExprErrorCode;
 declare class YAMLError extends YAMLError$1 {
     path: string;
-    extendLinePos: LinePos[];
+    extendLinePos: ExtendLinePos[];
     filename: string;
     constructor(name: ErrorName, pos: [number, number], code: ErrorCode, message: string);
 }
 declare class YAMLExprError extends YAMLError {
+    constructor(pos: [number, number], code: ErrorCode, message: string);
+}
+declare class YAMLParseError extends YAMLError {
+    constructor(pos: [number, number], code: ErrorCode, message: string);
+}
+declare class YAMLWarning extends YAMLError {
     constructor(pos: [number, number], code: ErrorCode, message: string);
 }
 
@@ -320,5 +326,5 @@ declare function parseExtend(filepath: string, options?: Options, state?: ParseS
     importedErrors: YAMLError[];
 }>;
 
-export { YAMLExprError, parseExtend };
-export type { ExtendParseOptions, Options };
+export { YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
+export type { ErrorCode, ErrorName, ExprErrorCode, ExtendParseOptions, Options };

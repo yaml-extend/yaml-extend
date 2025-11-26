@@ -1,4 +1,4 @@
-import type { BasicState, LinePos, RawToken } from "../tokenizerTypes.js";
+import type { BasicState, ExtendLinePos, RawToken } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
 import { getLinePosFromRange } from "../../utils/random.js";
 
@@ -21,8 +21,8 @@ export function peek<S extends BasicState>(state: S, n = 1): string {
 export function handleLinePos<S extends BasicState>(
   state: S,
   start: number
-): LinePos[] {
-  let linePos: LinePos[] = [];
+): ExtendLinePos[] {
+  let linePos: ExtendLinePos[] = [];
   let relLineStart = start - state.absLineStart;
   let i = start;
   while (i < state.pos) {
@@ -97,7 +97,7 @@ export function readUntilClose<S extends BasicState>(
   openChar: string,
   closeChar: string,
   ignoreTextTrim?: boolean
-): { linePos: LinePos[]; raw: string; text: string } {
+): { linePos: ExtendLinePos[]; raw: string; text: string } {
   let out = "";
   let depth = 0;
   const checkOpen =
@@ -152,7 +152,7 @@ export function read<S extends BasicState>(
   start: number,
   steps: number,
   ignoreTextTrim?: boolean
-): { linePos: LinePos[]; raw: string; text: string } {
+): { linePos: ExtendLinePos[]; raw: string; text: string } {
   state.pos = advance(state, steps);
   const linePos = handleLinePos(state, start);
   const raw = state.input.slice(start, state.pos);
@@ -165,7 +165,7 @@ export function readUntilChar<S extends BasicState>(
   start: number,
   stopChar: string | string[] | RegExp,
   ignoreTextTrim?: boolean
-): { linePos: LinePos[]; raw: string; text: string } {
+): { linePos: ExtendLinePos[]; raw: string; text: string } {
   let out = "";
   const checkStop =
     stopChar instanceof RegExp

@@ -1,4 +1,4 @@
-import { LinePos } from "../tokenizer/tokenizerTypes.js";
+import { ExtendLinePos } from "../tokenizer/tokenizerTypes.js";
 import { createHash } from "crypto";
 
 /**
@@ -127,7 +127,7 @@ export function getLinePosFromRange(
   str: string,
   lineStarts: number[],
   range: [number, number]
-): LinePos[] {
+): ExtendLinePos[] {
   const start = range[0];
   const end = range[1];
   const search = binarySearchLine(lineStarts, start);
@@ -135,7 +135,7 @@ export function getLinePosFromRange(
   let i = start;
   let line = search.line;
   let lineStart = start - search.absolutePos;
-  let linePos: LinePos[] = [];
+  let linePos: ExtendLinePos[] = [];
   while (i < str.length && i <= end) {
     if (str[i] === "\n") {
       if (i >= start)

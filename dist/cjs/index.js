@@ -22,6 +22,16 @@ class YAMLExprError extends YAMLError {
         super("YAMLExprError", pos, code, message);
     }
 }
+class YAMLParseError extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLParseError", pos, code, message);
+    }
+}
+class YAMLWarning extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLWarning", pos, code, message);
+    }
+}
 
 // Path related helper functions.
 /**
@@ -746,7 +756,9 @@ function parseDirectiveFromTokens(tokens, rawLine, lineNum, strIdx) {
     if (!tokens || tokens.length === 0)
         return null;
     // calc pos and linePos of the hole directive
-    const linePos = [{ start: 0, end: rawLine.length, line: lineNum }];
+    const linePos = [
+        { start: 0, end: rawLine.length, line: lineNum },
+    ];
     const pos = { start: strIdx, end: strIdx + rawLine.length };
     // handle baseTok
     const rawBaseTok = tokens[0];
@@ -1187,7 +1199,7 @@ async function initModuleCache(state, tempState) {
     // get cache data
     const sourceHash = hashStr(tempState.resolvedPath);
     const directives = tokenizeDirectives(tempState.source, tempState);
-    const AST = yaml.parseDocument(tempState.source, tempState.options).contents;
+    const AST = handleAST(tempState);
     // generate new cache
     const cache = {
         loadByParamHash: new Map(),
@@ -1202,6 +1214,28 @@ async function initModuleCache(state, tempState) {
     //  add directive errors and filename to tempState
     tempState.errors.push(...cache.directives.errors);
     tempState.filename = (_a = getFilename(directives.filename, true)) !== null && _a !== void 0 ? _a : "";
+}
+function handleAST(tempState) {
+    // pass source and options to yaml lib
+    const AST = yaml.parseDocument(tempState.source, tempState.options);
+    // add errors
+    const errors = AST.errors;
+    for (const e of errors) {
+        let error;
+        if (e instanceof yaml.YAMLParseError)
+            error = new YAMLParseError(e.pos, e.code, e.message);
+        if (e instanceof yaml.YAMLWarning)
+            error = new YAMLWarning(e.pos, e.code, e.message);
+        if (error) {
+            error.cause = e.cause;
+            error.linePos = e.linePos;
+            error.name = e.name;
+            error.stack = e.stack;
+            tempState.errors.push(error);
+        }
+    }
+    // return contents
+    return AST.contents;
 }
 /**
  * Function to add parse entery to cache of specific YAML file.
@@ -2938,12 +2972,13 @@ async function handleImports(state, tempState) {
     }
 }
 
-exports.YAMLExprError = YAMLExprError;
-exports.parseExtend = parseExtend;
-Object.keys(yaml).forEach(function (k) {
-    if (k !== 'default' && !Object.prototype.hasOwnProperty.call(exports, k)) Object.defineProperty(exports, k, {
-        enumerable: true,
-        get: function () { return yaml[k]; }
-    });
+Object.defineProperty(exports, "Schema", {
+    enumerable: true,
+    get: function () { return yaml.Schema; }
 });
+exports.YAMLError = YAMLError;
+exports.YAMLExprError = YAMLExprError;
+exports.YAMLParseError = YAMLParseError;
+exports.YAMLWarning = YAMLWarning;
+exports.parseExtend = parseExtend;
 //# sourceMappingURL=index.js.map

@@ -1,7 +1,7 @@
 {
   "name": "yaml-extend",
-  "version": "1.0.33",
-  "description": "Wrapper around `js-yaml` that adds focused, deterministic templating features to YAML: imports, per-module params, locals, private fields, typed expressions and small tag payloads — with caching and a file-watching `LiveLoader`.",
+  "version": "1.1.0",
+  "description": "",
   "type": "module",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",

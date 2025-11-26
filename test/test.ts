@@ -1,6 +1,8 @@
-import { parseExtend } from "../src/core/parse/parse.js";
+import { parseExtend } from "../src/core/parse/index.js";
 
-/// test
-const y = await parseExtend("./test.yaml", { basePath: "./test" });
+const parsed = await parseExtend("./test.yaml", {
+  basePath: "./test",
+  ignoreTags: true,
+});
 
-console.log("Y: ", y, y.parse);
+console.dir(parsed, { depth: 10 });

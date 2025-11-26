@@ -4,7 +4,7 @@ declare module "yaml" {
   // Augmenting by adding resolved
   interface Scalar<T = unknown> {
     resolved: boolean;
-    resolvedValue?: unknown;
+    resolvedValue: unknown;
   }
   interface YAMLMap<K = unknown, V = unknown> {
     resolved: boolean;

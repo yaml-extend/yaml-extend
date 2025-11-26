@@ -1,19 +1,7 @@
 /// <reference path="./yaml-augment.d.ts" />
 export * from "yaml";
 
-export { LiveLoader } from "./core/liveLoader/liveLoader.js";
-export { hashParams } from "./core/helpers.js";
-export { parseExtend } from "./core/parse/parse.js";
-export {
-  YAMLError,
-  YAMLExprError,
-  YAMLParseError,
-  YAMLWarning,
-} from "./core/extendClasses/error.js";
+export { parseExtend } from "./core/parse/index.js";
+export { YAMLExprError } from "./core/extendClasses/error.js";
 
-export type {
-  ModuleCache,
-  ParamLoadEntry,
-  DirectivesObj,
-  Options,
-} from "./types.js";
+export type { ExtendParseOptions, Options } from "./core/parse/parseTypes.js";

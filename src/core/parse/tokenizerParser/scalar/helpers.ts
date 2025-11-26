@@ -1,37 +1,66 @@
 import { Alias, Scalar, YAMLMap, YAMLSeq } from "yaml";
-import { YAMLExprError } from "../../extendClasses/error.js";
-import { ResolveCtx } from "../../../types.js";
-import { isRecord } from "../../helpers.js";
+import { YAMLExprError } from "../../../extendClasses/error.js";
+import { isRecord } from "../../utils/random.js";
+import type { Context } from "./index.js";
+import { ParseState, TempParseState } from "../../parseTypes.js";
+
+export function verifyNodeType(node: unknown, type: string): boolean {
+  if (!type) return true;
+  switch (type) {
+    case "as map":
+      return typeof node === "object" && !Array.isArray(node) && node != null;
+    case "as seq":
+      return Array.isArray(node);
+    case "as scalar":
+      return (
+        typeof node === "string" ||
+        typeof node === "number" ||
+        typeof node === "boolean"
+      );
+    default:
+      return true;
+  }
+}
 
 /**
  * Method to traverse through nodes tree. works sync.
  * @param tree - Node tree that will be traversed.
  * @param path - Path of traversal.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value after traversal and retuning subnode.
  */
 export async function traverseNodes(
   tree: Alias | Scalar | YAMLMap | YAMLSeq | null | unknown,
-  path: string[],
-  ctx: ResolveCtx
+  paths: Context["paths"],
+  state: ParseState,
+  tempState: TempParseState,
+  skipNum?: number
 ): Promise<unknown> {
   // start node from base of the tree
   let node = tree;
+  let start = skipNum ? skipNum : 0;
 
   // start traversing
-  for (const p of path) {
+  for (let i = start; i < paths.length; i++) {
+    // get path
+    const p = paths[i];
+
+    // get path and token
+    const { path, tok } = p;
+
     // if path part is a number handle it accordingly
-    const { node: childNode, resolved } = Number.isNaN(Number(p))
-      ? await handleStrPath(node, p, ctx)
-      : await handleNumPath(node, Number(p), ctx);
+    const { node: childNode, resolved } = Number.isNaN(Number(path))
+      ? await handleStrPath(node, path, state, tempState)
+      : await handleNumPath(node, Number(path), state, tempState);
 
     // if node resolved add error and break
     if (!resolved) {
-      ctx.errors.push(
+      const pathStr = paths.map((p) => p.path).join(".");
+      tempState.errors.push(
         new YAMLExprError(
-          ctx.range ? [...ctx.range] : [0, 99999],
+          [tok.pos.start, tok.pos.end],
           "",
-          `Invalid path in expression: ${path.join(".")}`
+          `Path: ${pathStr} is not present in target YAML tree.`
         )
       );
       node = undefined;
@@ -46,10 +75,11 @@ export async function traverseNodes(
   return node;
 }
 
-export async function handleStrPath(
+async function handleStrPath(
   node: Scalar | YAMLMap | YAMLSeq | null | unknown,
   pathPart: string,
-  ctx: ResolveCtx
+  state: ParseState,
+  tempState: TempParseState
 ): Promise<{
   node: Alias | Scalar | YAMLMap | YAMLSeq | null | unknown;
   resolved: boolean;
@@ -61,7 +91,12 @@ export async function handleStrPath(
       if (pair.key instanceof Scalar) key = pair.key.value;
       else key = pair.key;
       if (key === pathPart) {
-        const resVal = await ctx.resolveFunc(pair.value, true, true, ctx);
+        const resVal = await tempState.resolveFunc(
+          pair.value,
+          true,
+          state,
+          tempState
+        );
         return { node: resVal, resolved: true };
       }
     }
@@ -70,7 +105,7 @@ export async function handleStrPath(
   // if node is a YAMLSeq, check all the items
   if (node instanceof YAMLSeq) {
     for (const item of node.items) {
-      const resItem = await ctx.resolveFunc(item, true, true, ctx);
+      const resItem = await tempState.resolveFunc(item, true, state, tempState);
       if (typeof resItem === "string" && resItem === pathPart)
         return { node: resItem, resolved: true };
     }
@@ -87,10 +122,11 @@ export async function handleStrPath(
   };
 }
 
-export async function handleNumPath(
+async function handleNumPath(
   node: Scalar | YAMLMap | YAMLSeq | null | unknown,
   pathPart: number,
-  ctx: ResolveCtx
+  state: ParseState,
+  tempState: TempParseState
 ): Promise<{
   node: Alias | Scalar | YAMLMap | YAMLSeq | null | unknown;
   resolved: boolean;
@@ -102,7 +138,12 @@ export async function handleNumPath(
       if (pair.key instanceof Scalar) key = pair.key.value;
       else key = pair.key;
       if (key === `${pathPart}`) {
-        const resVal = await ctx.resolveFunc(pair.value, true, true, ctx);
+        const resVal = await tempState.resolveFunc(
+          pair.value,
+          true,
+          state,
+          tempState
+        );
         return { node: resVal, resolved: true };
       }
     }
@@ -113,14 +154,19 @@ export async function handleNumPath(
     const length = node.items.length;
     if (pathPart < length) {
       const item = node.items[pathPart];
-      const resItem = await ctx.resolveFunc(item, true, true, ctx);
+      const resItem = await tempState.resolveFunc(item, true, state, tempState);
       return { node: resItem, resolved: true };
     }
   }
 
   // if node is a scalar, get character at the index directly
   if (node instanceof Scalar) {
-    const resScalar = await ctx.resolveFunc(node.value, true, true, ctx);
+    const resScalar = await tempState.resolveFunc(
+      node.value,
+      true,
+      state,
+      tempState
+    );
     if (typeof resScalar === "string") {
       const length = node.value.length;
       if (pathPart < length)

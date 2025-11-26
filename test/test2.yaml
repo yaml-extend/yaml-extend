@@ -1,3 +1,8 @@
-%FILENAME gg
+%FILENAME "Some name"
+%PARAM work scalar whore
+%PARAM data map
+%PRIVATE node
 ---
-node99: value99
+node:
+  work: $param.work
+  data: $param.data

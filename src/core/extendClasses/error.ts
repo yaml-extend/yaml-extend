@@ -4,6 +4,7 @@ import {
   YAMLParseError,
   YAMLWarning,
 } from "yaml";
+import { LinePos } from "../parse/tokenizer/tokenizerTypes.js";
 
 // Inject YAMLExprError into ErrorName
 export type ErrorName = "YAMLParseError" | "YAMLWarning" | "YAMLExprError";
@@ -14,6 +15,9 @@ export type ErrorCode = OrigErrorCode | ExprErrorCode;
 
 // Base new ErrorName and ErrorCode into YAMLError class
 export class YAMLError extends OrigYAMLError {
+  path: string = "";
+  extendLinePos: LinePos[] = [];
+  filename: string = "";
   constructor(
     name: ErrorName,
     pos: [number, number],

@@ -3,41 +3,29 @@
  */
 export class CircularDepHandler {
   /** adjacency list: node -> set of dependencies (edges node -> dep) */
-  private _graphs: Map<string, Map<string, Set<string>>> = new Map();
+  private _graphs: Map<string, Set<string>> = new Map();
 
   /**
    * Method to handle checking of the circular dependency.
    * @param modulePath - Path of the current module.
    * @param targetPath - Path of the imported module.
-   * @param loadId - Unique id that identifies this load.
    * @returns - null if no circular dependency is present or array of paths or the circular dependency.
    */
-  addDep(
-    modulePath: string,
-    targetPath: string | undefined,
-    loadId: string
-  ): string[] | null {
-    // get graph for this loadId
-    let graph = this._graphs.get(loadId);
-    if (!graph) {
-      graph = new Map();
-      this._graphs.set(loadId, graph);
-    }
-
+  addDep(modulePath: string, targetPath: string | undefined): string[] | null {
     // ensure nodes exist
-    if (!graph.has(modulePath)) graph.set(modulePath, new Set());
+    if (!this._graphs.has(modulePath)) this._graphs.set(modulePath, new Set());
 
     // root/initial load — nothing to check
     if (!targetPath) return null;
 
-    if (!graph.has(targetPath)) graph.set(targetPath, new Set());
+    if (!this._graphs.has(targetPath)) this._graphs.set(targetPath, new Set());
 
     // add the edge modulePath -> targetPath
-    graph.get(modulePath)!.add(targetPath);
+    this._graphs.get(modulePath)!.add(targetPath);
 
     // Now check if there's a path from targetPath back to modulePath.
     // If so, we constructed a cycle.
-    const path = this._findPath(targetPath, modulePath, graph);
+    const path = this._findPath(targetPath, modulePath, this._graphs);
     if (path) {
       // path is [targetPath, ..., modulePath]
       // cycle: [modulePath, targetPath, ..., modulePath]
@@ -50,28 +38,15 @@ export class CircularDepHandler {
   /**
    * Method to delete dependency node (path of a module) from graph.
    * @param modulePath - Path that will be deleted.
-   * @param loadId - Unique id that identifies this load.
    */
-  deleteDep(modulePath: string, loadId: string): void {
-    // get graph for this loadId
-    const graph = this._graphs.get(loadId);
-    if (!graph) return;
-
+  deleteDep(modulePath: string): void {
     // remove outgoing edges (delete node key)
-    if (graph.has(modulePath)) graph.delete(modulePath);
+    if (this._graphs.has(modulePath)) this._graphs.delete(modulePath);
 
     // remove incoming edges from other nodes
-    for (const [k, deps] of graph.entries()) {
+    for (const [k, deps] of this._graphs.entries()) {
       deps.delete(modulePath);
     }
-  }
-
-  /**
-   * Method to delete all dependency nodes (path of a module) of specific loadId from graphs.
-   * @param loadId - Unique id that identifies this load.
-   */
-  deleteLoadId(loadId: string): void {
-    this._graphs.delete(loadId);
   }
 
   /** Method to find path of circular dependency. */
@@ -104,6 +79,3 @@ export class CircularDepHandler {
     return dfs(start) ? [...path] : null;
   }
 }
-
-/** Class to handle circular dependency check. */
-export const circularDepClass = new CircularDepHandler();

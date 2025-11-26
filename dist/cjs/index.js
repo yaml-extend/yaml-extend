@@ -1,39 +1,79 @@
 'use strict';
 
 var yaml = require('yaml');
-var path = require('path');
-var fs = require('fs');
 var promises = require('fs/promises');
+var fs = require('fs');
+var path = require('path');
 var crypto = require('crypto');
 
-/** Regex to capture if a path has .yaml or .yml in it or not. */
-const fileNameRegex = /.ya?ml$/;
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// This file contains Helper functions that are not related to our core work directly.
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Base new ErrorName and ErrorCode into YAMLError class
+class YAMLError extends yaml.YAMLError {
+    constructor(name, pos, code, message) {
+        // @ts-ignore
+        super(name, pos, code, message);
+        this.path = "";
+        this.extendLinePos = [];
+        this.filename = "";
+    }
+}
+// New YAMLExprError class
+class YAMLExprError extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLExprError", pos, code, message);
+    }
+}
+
 // Path related helper functions.
 /**
  * Function to resolve paths by adding basepath (path of the current module) and path (path of the imported or read module) together making absolute path of them.
- * @param targetPath - Path of the imported module.
- * @param currentPath - Path of the current module.
- * @returns Resolve of the two paths.
- */
-function resolvePath(targetPath, currentPath) {
-    return path.resolve(currentPath, targetPath);
-}
-/**
- * Function to resolve paths by adding basepath (path of the current module) and path (path of the imported or read module) together making absolute path of them.
- * @param resolvedPath - Resolved path from concatinating current file path with imported file path. works sync.
- * @param currentPath - Path of the current module.
+ * @param state - Path of the current module.
  * @returns Read value of the file in UTF-8 format.
  */
-async function readFile(resolvedPath, currentPath, loadOpts) {
-    const resCurrentPath = path.resolve(currentPath);
-    if (!isInsideSandBox(resolvedPath, resCurrentPath) && !loadOpts.unsafe)
-        throw new Error(`Path used: ${resolvedPath} is out of scope of base path: ${resCurrentPath}`);
-    if (!isYamlFile(resolvedPath))
-        throw new Error(`You can only load YAML files the loader. loaded file: ${resolvedPath}`);
-    return await promises.readFile(resolvedPath, { encoding: "utf8" });
+function verifyPath(path, tempState) {
+    // get base path and resolved path
+    const basePath = tempState.options.basePath;
+    // handle sandbox check
+    if (!isInsideSandBox(path, basePath) && !tempState.options.unsafe) {
+        tempState.errors.push(new YAMLExprError([0, 99999], "", `Path used: ${path} is out of scope of base path: ${basePath}.`));
+        return { status: false, error: "sandBox" };
+    }
+    // handle yaml file check
+    if (!isYamlFile(path)) {
+        tempState.errors.push(new YAMLExprError([0, 99999], "", `You can only parse YAML files that end with '.yaml' or '.yml' extension, path used: ${path}.`));
+        return { status: false, error: "yamlFile" };
+    }
+    // make sure path is indeed present
+    if (!fs.existsSync(path)) {
+        tempState.errors.push(new YAMLExprError([0, 99999], "", `Path used: ${path} is not present in filesystem.`));
+        return { status: false, error: "exist" };
+    }
+    return { status: true };
+}
+/**
+ * Method to handle relative paths by resolving & insuring that they live inside the sandbox and are actual YAML files, also detect circular dependency if present.
+ * @param basePath - Base path defined by user in the options (or cwd if was omitted by user) that will contain and sandbox all imports.
+ * @param modulePath - Path of the current YAML file.
+ * @param targetPath - Path of the imported YAML file.
+ * @param loadOpts - Options object passed to load function and updated using imported module's filepath.
+ * @param loadId - Unique id that identifies this load.
+ * @returns Resolved safe path that will be passed to fs readFile function.
+ */
+function mergePath(targetPath, state, tempState) {
+    // get resolved path and base path
+    const modulePath = path.dirname(tempState.resolvedPath);
+    const resPath = path.resolve(modulePath, targetPath);
+    // verify path
+    const verified = verifyPath(resPath, tempState);
+    if (!verified)
+        return { status: false, value: undefined };
+    // handle circular dependency check
+    const circularDep = state.circularDep.addDep(modulePath, resPath);
+    if (circularDep) {
+        tempState.errors.push(new YAMLExprError([0, 99999], "", `Circular dependency detected: ${circularDep.join(" -> ")}.`));
+        return { status: false, value: undefined };
+    }
+    // return path
+    return { status: true, value: resPath };
 }
 /**
  * Function to check if file reads are black boxed.
@@ -64,84 +104,32 @@ function isInsideSandBox(resolvedPath, basePath) {
  * @returns Boolean to indicate if file path is YAML file path.
  */
 function isYamlFile(path) {
-    return fileNameRegex.test(path);
+    return path.endsWith(".yaml") || path.endsWith(".yml");
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// ID and hash related helper functions.
-/**
- * Function to generate random id.
- */
-function generateId() {
-    return crypto.randomBytes(12).toString("hex");
-}
-/**
- * Function to stringify objects uniformly to generate stable hashed from them.
- * @param obj - Object that will be stringified.
- * @returns String that holds the stringified object.
- */
-function stableStringify(obj) {
-    if (obj === null || typeof obj !== "object")
-        return JSON.stringify(obj);
-    if (Array.isArray(obj))
-        return `[${obj.map(stableStringify).join(",")}]`;
-    const keys = Object.keys(obj).sort();
-    return `{${keys
-        .map((k) => JSON.stringify(k) + ":" + stableStringify(obj[k]))
-        .join(",")}}`;
-}
-/**
- * Function to normalize and hash params object.
- * @param params - Params object that will be hashed.
- * @returns Stable hash of params object that will only change if value or key inside object changed.
- */
-function hashParams(params) {
-    // stringify object
-    const strObj = stableStringify(params);
-    // hash and return
-    return crypto.createHash("sha256").update(strObj).digest().toString("hex");
-}
-/**
- * Function to hash string.
- * @param str - String that will be hashed.
- * @returns Hash of the string.
- */
-function hashStr(str) {
-    return crypto.createHash("sha256").update(str).digest().toString("hex");
-}
-/**
- * Function to ge first closing character at the same depth.
- * @param str - Sting that will be looped through.
- * @param openCh - Character used to open the expression (e.g. '{' or '[').
- * @param closeCh - Character used to close the expression (e.g. '}' or ']').
- * @param startIdx - Index to start searching from in the string.
- * @returns Number at which closest closing character at the same depth is present, or -1 if it's not closed.
- */
-function getClosingChar(str, openCh, closeCh, startIdx) {
-    /** Var to hold depth of the opening and closing characters. */
-    let depth = 0;
-    /** Var to hold index of the looping. */
-    let i = startIdx !== null && startIdx !== void 0 ? startIdx : 0;
-    // start loop string
-    while (i < str.length) {
-        // get character
-        const ch = str[i];
-        // if char is closing char and depth already zero return index other whise decrease depth by one
-        if (ch === closeCh && str[i - 1] !== "\\")
-            if (depth === 0)
-                return i;
-            else
-                depth--;
-        // if char is opening char increment depth by one
-        if (ch === openCh && str[i - 1] !== "\\")
-            depth++;
-        // increment loop index
-        i++;
+
+function getValueFromText(text) {
+    // if empty string return null
+    if (!text)
+        return null;
+    // try parse text and return it
+    try {
+        const parsed = JSON.parse(text);
+        return parsed;
     }
-    // if no closing at depth zero return -1
-    return -1;
+    catch (err) { }
+    // trim text and check for true, false, null and numbers
+    const trim = text.trim();
+    if (trim === "true")
+        return true;
+    if (trim === "false")
+        return false;
+    if (trim === "null")
+        return null;
+    if (!Number.isNaN(Number(trim)))
+        return Number(trim);
+    // return text as it is
+    return text;
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Random helpers.
 /**
  * Method to check if value is an array or object (record that can contains other primative values).
  * @param val - Value that will be checked.
@@ -179,945 +167,1844 @@ function deepClone(value) {
     };
     return cloneRec(value);
 }
+function stringify(value, preserveNull) {
+    if (typeof value === "string")
+        return value;
+    if (value == undefined) {
+        if (preserveNull)
+            return "undefined";
+        else
+            return "";
+    }
+    if (value == null) {
+        if (preserveNull)
+            return "null";
+        else
+            return "";
+    }
+    return JSON.stringify(value);
+}
+function getLineStarts(str) {
+    const starts = [];
+    let i = 0;
+    while (i < str.length) {
+        if (str[i] === "\n")
+            starts.push(i);
+        i++;
+    }
+    return starts;
+}
 /**
- * Function to allow ignore private load on specific module.
- * @param load - Load after removing private loads.
- * @param privateLoad - Load with private nodes still present.
- * @param opts - Options object passed to the loader.
- * @returns Either load or privateLoad if file defined to ignore private nodes.
+ * Find the rightmost element strictly less than `target` in a sorted ascending array.
+ * @param arr Sorted ascending array of numbers.
+ * @param target The number to compare against.
+ * @returns { index, value } of the closest lower element, or null if none exists.
  */
-function handlePrivateLoad(load, privateLoad, filename, ignorePrivate) {
-    // if ignore private not defined return privateLoad directly
-    if (ignorePrivate === undefined)
-        return load;
-    // if all modules defined to ignore private return fullLoad directly
-    if (ignorePrivate === "all")
-        return privateLoad;
-    // return fullLoad only if filename matches the name of ignores files
-    if (filename && ignorePrivate.includes(filename))
-        return privateLoad;
-    // return privateLoad as default
-    return load;
+function binarySearchLine(arr, target) {
+    let low = 0;
+    let high = arr.length - 1;
+    let resultIndex = -1;
+    while (low <= high) {
+        const mid = low + ((high - low) >> 1);
+        if (arr[mid] < target) {
+            // arr[mid] is a candidate; move right to find a closer (larger) candidate
+            resultIndex = mid;
+            low = mid + 1;
+        }
+        else {
+            // arr[mid] >= target, we need strictly smaller => search left half
+            high = mid - 1;
+        }
+    }
+    if (resultIndex === -1)
+        return null;
+    return { line: resultIndex + 1, absolutePos: arr[resultIndex] };
+}
+function getLinePosFromRange(str, lineStarts, range) {
+    const start = range[0];
+    const end = range[1];
+    const search = binarySearchLine(lineStarts, start);
+    if (!search)
+        return [];
+    let i = start;
+    let line = search.line;
+    let lineStart = start - search.absolutePos;
+    let linePos = [];
+    while (i < str.length && i <= end) {
+        if (str[i] === "\n") {
+            if (i >= start)
+                linePos.push({ start: lineStart, end: i - lineStart, line: line });
+            line += 1;
+            lineStart = 0;
+        }
+        i++;
+    }
+    linePos.push({ start: lineStart, end: i - lineStart, line });
+    return linePos;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// This file contains all the stores (cache) used in the library (for load and LiveLoader) along with functions to interact with these stores.
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Main cache stores.
 /**
- * Map of all loads, which is keyed by loadId and each load id stores the important input and output of load function.
+ * Function to stringify objects uniformly to generate stable hashed from them.
+ * @param obj - Object that will be stringified.
+ * @returns String that holds the stringified object.
  */
-const modulesCache = new Map();
+function stableStringify(obj) {
+    if (obj === null || typeof obj !== "object")
+        return JSON.stringify(obj);
+    if (Array.isArray(obj))
+        return `[${obj.map(stableStringify).join(",")}]`;
+    const keys = Object.keys(obj).sort();
+    return `{${keys
+        .map((k) => JSON.stringify(k) + ":" + stableStringify(obj[k]))
+        .join(",")}}`;
+}
 /**
- *  Map that links load ids to modules they utilize.
+ * Function to normalize and hash params object.
+ * @param params - Params object that will be hashed.
+ * @returns Stable hash of params object that will only change if value or key inside object changed.
  */
-const loadIdsToModules = new Map();
+function hashParams(params) {
+    // stringify object
+    const strObj = stableStringify(params);
+    // hash and return
+    return crypto.createHash("sha256").update(strObj).digest().toString("hex");
+}
 /**
- * Map that links modules to load ids that calls them.
+ * Function to hash string.
+ * @param str - String that will be hashed.
+ * @returns Hash of the string.
  */
-const modulesToLoadIds = new Map();
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Cache interaction functions.
+function hashStr(str) {
+    return crypto.createHash("sha256").update(str).digest().toString("hex");
+}
+
+function verifyFilename(dir, directives) {
+    var _a;
+    // verify filename
+    const filename = (_a = dir.filename) === null || _a === void 0 ? void 0 : _a.value;
+    if (!filename) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass a scalar after %FILENAME directive.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // verify only one valid FILENAME directive is used
+    if (directives.filename.some((d) => d.valid)) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Only one FILENAME directive can be defined, first one defined will be used.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // type inforcement
+    if (filename)
+        dir.filename.value = stringify(filename);
+}
+function verifyImport(dir, directives, tempState) {
+    var _a, _b;
+    // make sure that alias is used
+    const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
+    if (!alias) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass alias to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...].");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // make sure that alias is used only once
+    if (directives.import.some((d) => d.alias.value === alias)) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Alias for each IMPORT directive should be unique, this alias is used before.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // make sure that path is used
+    const path = (_b = dir.path) === null || _b === void 0 ? void 0 : _b.value;
+    if (!path) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass path to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...].");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // verify path
+    const validPath = verifyPath(tempState.resolvedPath, tempState);
+    if (!validPath.status) {
+        const message = validPath.error === "sandBox"
+            ? "path is out of scope of sandbox"
+            : validPath.error === "yamlFile"
+                ? "path extension is not '.yaml' or '.yml'"
+                : "path doesn't exist on filesystem";
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", `Invalid path, ${message}`);
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // type inforcement
+    if (alias)
+        dir.alias.value = stringify(alias);
+    if (path)
+        dir.path.value = stringify(path);
+}
+function verifyLocal(dir, directives) {
+    var _a, _b;
+    // make sure that alias is used
+    const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
+    if (!alias) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass alias to '%LOCAL' directive, structure of LOCAL directive: %LOCAL <alias> <type> <defValue>.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // make sure that alias is used only once
+    if (directives.import.some((d) => { var _a; return ((_a = d.alias) === null || _a === void 0 ? void 0 : _a.value) === alias; })) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Alias for each LOCAL directive should be unique, this alias is used before.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // only if type is present, verify that type is valid other wise set it to undefined and return an error
+    const type = (_b = dir.yamlType) === null || _b === void 0 ? void 0 : _b.value;
+    if (type &&
+        (typeof type !== "string" ||
+            (type !== "scalar" && type !== "map" && type !== "seq"))) {
+        const error = new YAMLExprError([dir.yamlType.pos.start, dir.yamlType.pos.end], "", "Invalid type, type can only be 'scalar', 'map' or 'seq'.");
+        dir.errors.push(error);
+        directives.errors.push(error);
+        dir.yamlType.value = undefined;
+    }
+    // type inforcement
+    if (alias)
+        dir.alias.value = stringify(alias);
+}
+function verifyParam(dir, directives) {
+    var _a, _b;
+    // make sure that alias is used
+    const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
+    if (!alias) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass alias to '%PARAM' directive, structure of PARAM directive: %PARAM <alias> <type> <defValue>.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // make sure that alias is used only once
+    if (directives.param.some((d) => { var _a; return ((_a = d.alias) === null || _a === void 0 ? void 0 : _a.value) === alias; })) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Alias for each PARAM directive should be unique, this alias is used before.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // only if type is present, verify that type is valid other wise set it to undefined and return an error
+    const type = (_b = dir.yamlType) === null || _b === void 0 ? void 0 : _b.value;
+    if (type &&
+        (typeof type !== "string" ||
+            (type !== "scalar" && type !== "map" && type !== "seq"))) {
+        const error = new YAMLExprError([dir.yamlType.pos.start, dir.yamlType.pos.end], "", "Invalid type, type can only be 'scalar', 'map' or 'seq'.");
+        dir.errors.push(error);
+        directives.errors.push(error);
+        dir.yamlType.value = undefined;
+    }
+    // type inforcement
+    if (alias)
+        dir.alias.value = stringify(alias);
+}
+function verifyPrivate(dir, directives) {
+    // only type inforcement here for each path
+    for (const path of dir.paths) {
+        path.value = stringify(path.value);
+    }
+}
+function verifyTag(dir, directives) {
+    var _a, _b;
+    // make sure that handle is used
+    const handle = (_a = dir.handle) === null || _a === void 0 ? void 0 : _a.value;
+    if (!handle) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass handle to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // make sure that handle is used only once
+    if (directives.tag.some((d) => { var _a; return ((_a = d.handle) === null || _a === void 0 ? void 0 : _a.value) === handle; })) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Handle for each TAG directive should be unique, this handle is used before.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // make sure that prefix is used
+    const prefix = (_b = dir.prefix) === null || _b === void 0 ? void 0 : _b.value;
+    if (!prefix) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass prefix to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // type inforcement
+    if (handle)
+        dir.handle.value = stringify(handle);
+    if (prefix)
+        dir.prefix.value = stringify(prefix);
+}
+function verifyVersion(dir, directives) {
+    var _a;
+    // make sure that version is used
+    const version = (_a = dir.version) === null || _a === void 0 ? void 0 : _a.value;
+    if (!version) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass version to '%YAML' directive, structure of YAML directive: %YAML <version>.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // verify only one valid FILENAME directive is used
+    if (directives.version.some((d) => d.valid)) {
+        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Only one YAML directive can be defined, first one defined will be used.");
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // type inforcement along with verification that verion is valid (1.1) or (1.2)
+    if (version) {
+        const numVersion = Number(version);
+        if (numVersion !== 1.1 && numVersion !== 1.2) {
+            const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Invalid version value, valid values are 1.1 or 1.2.");
+            dir.errors.push(error);
+            dir.valid = false;
+            directives.errors.push(error);
+        }
+        dir.version.value = numVersion;
+    }
+}
+
+/* ---------------------- Tokenizer for a single line (with spans) ---------------------- */
 /**
- * Function to add module (str) data under existing loadId. while updating links between loadIds and modules as well.
- * @param loadId - Unique id that identifies this load.
- * @param str - YAML String passed.
- * @param filepath - Path of the readed YAML file.
- * @param AST - AST tree from yaml parse.
- * @param directives - Object that holds metadata about the directives.
- * @returns Reference to the created cache.
+ * Tokenize a single directive line (line must start with `%`).
+ * Each token includes start/end indices in the original line.
  */
-function addModuleCache(loadId, filepath, str, AST, directives) {
-    // resolve filepath
-    const resolvedPath = path.resolve(filepath);
-    // hash string, params and path
-    const hashedStr = hashStr(str);
-    // create new empty cache entery
-    const moduleCache = {
-        sourceHash: hashedStr,
-        resolvedPath,
-        loadByParamHash: new Map(),
-        directives,
-        AST,
-        pureLoad: {
-            load: undefined,
-            privateLoad: undefined,
-            errors: [],
+function tokenizeDirLine(line, lineNum, strIdx) {
+    if (!line || !line.startsWith("%"))
+        return [];
+    const n = line.length;
+    let i = 1; // skip leading '%'
+    const tokens = [];
+    const isWhitespace = (ch) => !ch ? false : ch === " " || ch === "\t" || ch === "\r" || ch === "\n";
+    const pushTokenFromSlice = (start, end) => {
+        if (start >= end)
+            return;
+        const raw = line.slice(start, end);
+        const quoted = (raw[0] === '"' && raw[raw.length - 1] === '"') ||
+            (raw[0] === "'" && raw[raw.length - 1] === "'");
+        let text = raw;
+        if (quoted) {
+            const quoteChar = raw[0];
+            const inner = raw.slice(1, -1);
+            text = unescapeQuoted(inner, quoteChar);
+        }
+        const value = getValueFromText(text);
+        tokens.push({
+            raw,
+            text,
+            quoted,
+            value,
+            linePos: [{ start, end, line: lineNum }],
+            pos: {
+                start: strIdx + start,
+                end: strIdx + end,
+            },
+        });
+    };
+    // read directive name (skip whitespace then read until whitespace)
+    while (i < n && isWhitespace(line[i]))
+        i++;
+    const startDir = i;
+    while (i < n && !isWhitespace(line[i]))
+        i++;
+    const endDir = i;
+    if (startDir >= endDir)
+        return [];
+    pushTokenFromSlice(startDir, endDir);
+    // parse rest tokens
+    while (i < n) {
+        // skip whitespace
+        while (i < n && isWhitespace(line[i]))
+            i++;
+        if (i >= n)
+            break;
+        // If starts with quote -> quoted token
+        if (line[i] === '"' || line[i] === "'") {
+            const q = line[i];
+            const startTok = i;
+            i++; // consume opening quote
+            let escape = false;
+            while (i < n) {
+                const ch = line[i];
+                if (escape) {
+                    escape = false;
+                    i++;
+                    continue;
+                }
+                if (ch === "\\") {
+                    escape = true;
+                    i++;
+                    continue;
+                }
+                if (ch === q) {
+                    i++; // consume closing
+                    break;
+                }
+                i++;
+            }
+            const endTok = i; // after closing quote (or EOF)
+            pushTokenFromSlice(startTok, endTok);
+            continue;
+        }
+        // If starts with { or [ or ( -> capture until balanced (including nested and quoted)
+        if (line[i] === "{" || line[i] === "[" || line[i] === "(") {
+            const startTok = i;
+            let braceDepth = 0, bracketDepth = 0, parenDepth = 0;
+            const startCh = line[i];
+            if (startCh === "{")
+                braceDepth = 1;
+            else if (startCh === "[")
+                bracketDepth = 1;
+            else if (startCh === "(")
+                parenDepth = 1;
+            i++; // consume opening
+            while (i < n && (braceDepth > 0 || bracketDepth > 0 || parenDepth > 0)) {
+                const ch = line[i];
+                if (ch === '"' || ch === "'") {
+                    // capture quoted inside
+                    const q = ch;
+                    i++;
+                    while (i < n) {
+                        const c2 = line[i];
+                        if (c2 === "\\") {
+                            i += 2; // skip escaped char if possible
+                            continue;
+                        }
+                        i++;
+                        if (c2 === q)
+                            break;
+                    }
+                    continue;
+                }
+                if (ch === "{")
+                    braceDepth++;
+                else if (ch === "}")
+                    braceDepth--;
+                else if (ch === "[")
+                    bracketDepth++;
+                else if (ch === "]")
+                    bracketDepth--;
+                else if (ch === "(")
+                    parenDepth++;
+                else if (ch === ")")
+                    parenDepth--;
+                i++;
+            }
+            const endTok = i;
+            pushTokenFromSlice(startTok, endTok);
+            continue;
+        }
+        // Otherwise read until next whitespace (but allow nested quoted / braces inside token)
+        const startTok = i;
+        let braceDepth = 0, bracketDepth = 0, parenDepth = 0;
+        while (i < n) {
+            const ch = line[i];
+            if (ch === '"' || ch === "'") {
+                // include quoted part in token
+                const q = ch;
+                i++;
+                while (i < n) {
+                    const c2 = line[i];
+                    if (c2 === "\\") {
+                        i += 2; // include escape and char
+                        continue;
+                    }
+                    i++;
+                    if (c2 === q)
+                        break;
+                }
+                continue;
+            }
+            if (ch === "{") {
+                braceDepth++;
+                i++;
+                continue;
+            }
+            if (ch === "}") {
+                if (braceDepth > 0)
+                    braceDepth--;
+                i++;
+                continue;
+            }
+            if (ch === "[") {
+                bracketDepth++;
+                i++;
+                continue;
+            }
+            if (ch === "]") {
+                if (bracketDepth > 0)
+                    bracketDepth--;
+                i++;
+                continue;
+            }
+            if (ch === "(") {
+                parenDepth++;
+                i++;
+                continue;
+            }
+            if (ch === ")") {
+                if (parenDepth > 0)
+                    parenDepth--;
+                i++;
+                continue;
+            }
+            if (isWhitespace(ch) &&
+                braceDepth === 0 &&
+                bracketDepth === 0 &&
+                parenDepth === 0) {
+                break; // stop before whitespace
+            }
+            i++;
+        }
+        const endTok = i;
+        pushTokenFromSlice(startTok, endTok);
+        // loop will skip whitespace at top
+    }
+    return tokens;
+}
+/* ---------------------- Directive parser (single line -> structured with spans) ---------------------- */
+function upper(s) {
+    return s ? s.toUpperCase() : s;
+}
+/**
+ * Find the first '=' in `s` that is NOT inside single or double quotes and not escaped.
+ * Returns -1 if none found.
+ */
+function findTopLevelEquals(s) {
+    let inSingle = false;
+    let inDouble = false;
+    let escape = false;
+    for (let i = 0; i < s.length; i++) {
+        const ch = s[i];
+        if (escape) {
+            escape = false;
+            continue;
+        }
+        if (ch === "\\") {
+            escape = true;
+            continue;
+        }
+        if (ch === "'" && !inDouble) {
+            inSingle = !inSingle;
+            continue;
+        }
+        if (ch === '"' && !inSingle) {
+            inDouble = !inDouble;
+            continue;
+        }
+        if (ch === "=" && !inSingle && !inDouble) {
+            return i;
+        }
+    }
+    return -1;
+}
+/**
+ * Helper: build a RawToken for a slice inside an existing token (preserves line number).
+ */
+function buildInnerRawToken(parentTok, absStart, absEnd) {
+    const raw = parentTok.raw.slice(absStart - parentTok.pos.start, absEnd - parentTok.pos.start);
+    let quoted = false;
+    let text = raw;
+    if (raw &&
+        raw.length >= 2 &&
+        ((raw[0] === '"' && raw[raw.length - 1] === '"') ||
+            (raw[0] === "'" && raw[raw.length - 1] === "'"))) {
+        quoted = true;
+        const inner = raw.slice(1, -1);
+        text = unescapeQuoted(inner, raw[0]);
+    }
+    const value = getValueFromText(text);
+    const line = parentTok.linePos && parentTok.linePos.length > 0
+        ? parentTok.linePos[0].line
+        : 0;
+    return {
+        raw,
+        text,
+        value,
+        quoted,
+        linePos: [{ start: absStart, end: absEnd, line }],
+        pos: {
+            start: absStart,
+            end: absEnd,
         },
     };
-    // save it to the cache
-    modulesCache.set(resolvedPath, moduleCache);
-    // id -> paths
-    let paths = loadIdsToModules.get(loadId);
-    if (!paths) {
-        paths = new Set();
-        loadIdsToModules.set(loadId, paths);
-    }
-    paths.add(resolvedPath);
-    // path -> ids
-    let ids = modulesToLoadIds.get(resolvedPath);
-    if (!ids) {
-        ids = new Set();
-        modulesToLoadIds.set(resolvedPath, ids);
-    }
-    ids.add(loadId);
-    // return reference to the created cache
-    return moduleCache;
-}
-function addResolveCache(filepath, params, load, privateLoad, errors) {
-    // create the entry object
-    const paramLoadEntry = { load, privateLoad, errors: errors };
-    // resolve filepath
-    const resolvedPath = path.resolve(filepath);
-    // get module cache
-    const moduleCache = modulesCache.get(resolvedPath);
-    if (moduleCache === undefined)
-        return;
-    // if no params passed save it as pureLoad and privatePureLoad
-    if (!params) {
-        moduleCache.pureLoad = paramLoadEntry;
-        return paramLoadEntry;
-    }
-    // hash params
-    const hashedParams = hashParams(params);
-    // add load
-    moduleCache.loadByParamHash.set(hashedParams, paramLoadEntry);
-    // return
-    return paramLoadEntry;
 }
 /**
- * Function that checks if module's data are cached and return them, if not it returns undefined.
- * @param modulePath - Url path of the module that will be deleted.
- * @param str - Optional String passed to load function so it can verify if it has changed or not.
- * @returns Module's cache data or undefined if not present.
+ * Parse tokens for one directive line into a Directive object with positional spans.
+ * Returns null if tokens are invalid/unknown directive.
  */
-function getModuleCache(modulePath, str) {
-    // if no path supplied return
-    if (!modulePath)
-        return;
-    // check if module cache is present
-    const moduleCache = modulesCache.get(modulePath);
-    if (moduleCache === undefined)
-        return;
-    // 2nd step verification by comparing old and new hashed str
-    if (str) {
-        const newStrHash = hashStr(str);
-        if (newStrHash !== moduleCache.sourceHash)
-            return;
-    }
-    // return blue print
-    return moduleCache;
-}
-/**
- * Function that checks if specific load with module params is cached.
- * @param modulePath - Url path of the module that will be deleted.
- * @param params - Value of module params in YAML sting.
- * @returns Object that stores load value and module params used to load it.
- */
-function getResolveCache(modulePath, params) {
-    // if no path supplied return
-    if (!modulePath)
-        return;
-    // check if module cache is present (should be present but do this for ts)
-    const moduleCache = modulesCache.get(modulePath);
-    if (!moduleCache)
-        return;
-    // if no params passed return pure load
-    if (!params)
-        return moduleCache.pureLoad;
-    // hash params
-    const hashedParams = hashParams(params);
-    // get cache of this load with params using hashed params
-    const cache = moduleCache.loadByParamHash.get(hashedParams);
-    // return cache
-    return cache;
-}
-/**
- * Function to delete a module from load id, using in live loader.
- * @param loadId - Unique id that identifies this load.
- * @param modulePath - Url path of the module that will be deleted.
- */
-function deleteModuleCache(loadId, modulePath) {
-    var _a, _b, _c;
-    // delete link between loadId (live loader id) and the path or module
-    (_a = loadIdsToModules.get(loadId)) === null || _a === void 0 ? void 0 : _a.delete(modulePath);
-    (_b = modulesToLoadIds.get(modulePath)) === null || _b === void 0 ? void 0 : _b.delete(loadId);
-    if (((_c = modulesToLoadIds.get(modulePath)) === null || _c === void 0 ? void 0 : _c.size) === 0)
-        modulesCache.delete(modulePath);
-}
-/**
- * Function to delete load id along with all its links and modules cache if it was the only one utilizing them.
- * @param loadId - Unique id that identifies this load.
- */
-function deleteLoadIdFromCache(loadId) {
-    // get modules of this loadId, if not present just return
-    const modules = loadIdsToModules.get(loadId);
-    // for each modules remove the loadId from it, and if it became empty delete the modulesCache
-    if (modules)
-        for (const m of modules) {
-            const ids = modulesToLoadIds.get(m);
-            if (!ids)
-                continue;
-            ids.delete(loadId);
-            if (ids.size === 0)
-                modulesCache.delete(m);
+function parseDirectiveFromTokens(tokens, rawLine, lineNum, strIdx) {
+    var _a, _b;
+    if (!tokens || tokens.length === 0)
+        return null;
+    // calc pos and linePos of the hole directive
+    const linePos = [{ start: 0, end: rawLine.length, line: lineNum }];
+    const pos = { start: strIdx, end: strIdx + rawLine.length };
+    // handle baseTok
+    const rawBaseTok = tokens[0];
+    const baseTok = rawBaseTok;
+    // get type from baseTok
+    let type = baseTok.text; // get base text
+    // if typeof base text is number return
+    if (typeof type === "number")
+        return null;
+    else
+        type = type ? upper(type) : type;
+    try {
+        if (type === "TAG") {
+            const hTok = tokens[1];
+            const prefixTok = tokens[2];
+            return {
+                type: "TAG",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                handle: hTok,
+                prefix: prefixTok,
+            };
         }
-    // finally remove the entry for loadId
-    loadIdsToModules.delete(loadId);
-}
-
-/**
- * Class to handle circular dependency checks.
- */
-class CircularDepHandler {
-    constructor() {
-        /** adjacency list: node -> set of dependencies (edges node -> dep) */
-        this._graphs = new Map();
-    }
-    /**
-     * Method to handle checking of the circular dependency.
-     * @param modulePath - Path of the current module.
-     * @param targetPath - Path of the imported module.
-     * @param loadId - Unique id that identifies this load.
-     * @returns - null if no circular dependency is present or array of paths or the circular dependency.
-     */
-    addDep(modulePath, targetPath, loadId) {
-        // get graph for this loadId
-        let graph = this._graphs.get(loadId);
-        if (!graph) {
-            graph = new Map();
-            this._graphs.set(loadId, graph);
+        if (type === "YAML") {
+            const versionTok = tokens[1];
+            return {
+                type: "YAML",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                version: versionTok,
+            };
         }
-        // ensure nodes exist
-        if (!graph.has(modulePath))
-            graph.set(modulePath, new Set());
-        // root/initial load — nothing to check
-        if (!targetPath)
-            return null;
-        if (!graph.has(targetPath))
-            graph.set(targetPath, new Set());
-        // add the edge modulePath -> targetPath
-        graph.get(modulePath).add(targetPath);
-        // Now check if there's a path from targetPath back to modulePath.
-        // If so, we constructed a cycle.
-        const path = this._findPath(targetPath, modulePath, graph);
-        if (path) {
-            // path is [targetPath, ..., modulePath]
-            // cycle: [modulePath, targetPath, ..., modulePath]
-            return [modulePath, ...path];
+        if (type === "FILENAME") {
+            const filenameTok = tokens[1];
+            return {
+                type: "FILENAME",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                filename: filenameTok,
+            };
+        }
+        if (type === "IMPORT") {
+            // expected: %IMPORT <alias> <path> [key=value ...]
+            const aliasTok = tokens[1];
+            const pathTok = tokens[2];
+            const params = {};
+            let paramsStart = null;
+            let paramsEnd = null;
+            for (let idx = 3; idx < tokens.length; idx++) {
+                const tok = tokens[idx];
+                if (paramsStart === null)
+                    paramsStart = tok.pos.start;
+                paramsEnd = tok.pos.end;
+                const raw = tok.raw === null ? "" : tok.raw;
+                const eqIndex = findTopLevelEquals(raw);
+                if (eqIndex === -1) {
+                    // key only -> build a RawToken for the key (it's the whole token)
+                    const keyTok = buildInnerRawToken(tok, tok.pos.start, tok.pos.end);
+                    let keyText = keyTok.text;
+                    params[keyText] = {
+                        raw: raw,
+                        key: keyTok,
+                        equal: undefined,
+                        value: undefined,
+                    };
+                }
+                else {
+                    // key/value split where '=' is not inside quotes
+                    const keyRawSlice = raw.slice(0, eqIndex);
+                    const valRawSlice = raw.slice(eqIndex + 1);
+                    const keyStart = tok.pos.start;
+                    const keyEnd = tok.pos.start + eqIndex;
+                    const valueStart = tok.pos.start + eqIndex + 1;
+                    const valueEnd = tok.pos.end;
+                    const keyTok = buildInnerRawToken(tok, keyStart, keyEnd);
+                    const eqTok = buildInnerRawToken(tok, keyEnd, valueStart);
+                    const valueTok = buildInnerRawToken(tok, valueStart, valueEnd);
+                    const keyText = keyTok.text;
+                    params[keyText] = {
+                        raw: raw,
+                        key: keyTok,
+                        equal: eqTok,
+                        value: valueTok,
+                    };
+                }
+            }
+            let resolvedParams = {};
+            for (const [k, t] of Object.entries(params))
+                resolvedParams[k] = (_a = t.value) === null || _a === void 0 ? void 0 : _a.value;
+            return {
+                type: "IMPORT",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                alias: aliasTok,
+                path: pathTok,
+                params,
+                resolvedParams,
+            };
+        }
+        if (type === "LOCAL") {
+            // %LOCAL <alias> <type> <defValue>
+            const aliasTok = tokens[1];
+            const typeTok = tokens[2];
+            const defTok = tokens[3];
+            return {
+                type: "LOCAL",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                alias: aliasTok,
+                yamlType: typeTok,
+                defValue: defTok,
+            };
+        }
+        if (type === "PARAM") {
+            // %PARAM <alias> <type> <defValue>
+            const aliasTok = tokens[1];
+            const typeTok = tokens[2];
+            const defTok = tokens[3];
+            return {
+                type: "PARAM",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                alias: aliasTok,
+                yamlType: typeTok,
+                defValue: defTok,
+            };
+        }
+        if (type === "PRIVATE") {
+            // %PRIVATE <path> [<path> ...]
+            const pathToks = tokens.slice(1).map((t) => t);
+            const resolvedPaths = {};
+            for (const tok of pathToks) {
+                const text = tok.text;
+                const paths = [];
+                let i = 0;
+                let startIdx = 0;
+                let out = "";
+                while (i < text.length) {
+                    const ch = text[i];
+                    if (ch === ".") {
+                        paths.push(out);
+                        out = "";
+                        startIdx = i;
+                    }
+                    if (ch === "\\") {
+                        i++;
+                        if (i > text.length)
+                            break;
+                        const esc = text[i];
+                        const map = {
+                            n: "\n",
+                            r: "\r",
+                            t: "\t",
+                            "'": "'",
+                            '"': '"',
+                            "\\": "\\",
+                        };
+                        out += (_b = map[esc]) !== null && _b !== void 0 ? _b : esc;
+                        i++;
+                        continue;
+                    }
+                    out += ch;
+                    i++;
+                }
+                if (out)
+                    paths.push(out);
+                resolvedPaths[text] = { pathParts: paths, token: tok };
+            }
+            return {
+                type: "PRIVATE",
+                rawLine,
+                linePos,
+                pos,
+                valid: true,
+                errors: [],
+                base: baseTok,
+                paths: pathToks,
+                resolvedPaths,
+            };
         }
         return null;
     }
-    /**
-     * Method to delete dependency node (path of a module) from graph.
-     * @param modulePath - Path that will be deleted.
-     * @param loadId - Unique id that identifies this load.
-     */
-    deleteDep(modulePath, loadId) {
-        // get graph for this loadId
-        const graph = this._graphs.get(loadId);
-        if (!graph)
-            return;
-        // remove outgoing edges (delete node key)
-        if (graph.has(modulePath))
-            graph.delete(modulePath);
-        // remove incoming edges from other nodes
-        for (const [k, deps] of graph.entries()) {
-            deps.delete(modulePath);
-        }
+    catch (err) {
+        return null;
     }
-    /**
-     * Method to delete all dependency nodes (path of a module) of specific loadId from graphs.
-     * @param loadId - Unique id that identifies this load.
-     */
-    deleteLoadId(loadId) {
-        this._graphs.delete(loadId);
-    }
-    /** Method to find path of circular dependency. */
-    _findPath(start, target, graph) {
-        const visited = new Set();
-        const path = [];
-        const dfs = (node) => {
-            if (visited.has(node))
-                return false;
-            visited.add(node);
-            path.push(node);
-            if (node === target)
-                return true;
-            const neighbors = graph.get(node);
-            if (neighbors) {
-                for (const n of neighbors) {
-                    if (dfs(n))
-                        return true;
+}
+/* ---------------------- Main scanner over full text ---------------------- */
+/**
+ * Scan a multi-line YAML text and return all directives found with spans.
+ * A directive is recognized only when '%' appears at the start of a line (column 0).
+ */
+function tokenizeDirectives(text, tempState) {
+    const lines = text.split(/\r?\n/);
+    let strIdx = 0; // var to hold idx inside the hole text not only one line
+    const directives = {
+        filename: [],
+        tag: [],
+        private: [],
+        param: [],
+        local: [],
+        import: [],
+        version: [],
+        errors: [],
+    };
+    for (let idx = 0; idx < lines.length; idx++) {
+        const rawLine = lines[idx];
+        if (rawLine.startsWith("%")) {
+            const tokens = tokenizeDirLine(rawLine, idx, strIdx);
+            let dir = parseDirectiveFromTokens(tokens, rawLine, idx, strIdx);
+            if (dir) {
+                switch (dir.type) {
+                    case "FILENAME":
+                        verifyFilename(dir, directives);
+                        directives.filename.push(dir);
+                        break;
+                    case "IMPORT":
+                        verifyImport(dir, directives, tempState);
+                        directives.import.push(dir);
+                        break;
+                    case "LOCAL":
+                        verifyLocal(dir, directives);
+                        directives.local.push(dir);
+                        break;
+                    case "PARAM":
+                        verifyParam(dir, directives);
+                        directives.param.push(dir);
+                        break;
+                    case "PRIVATE":
+                        verifyPrivate(dir);
+                        directives.private.push(dir);
+                        break;
+                    case "TAG":
+                        verifyTag(dir, directives);
+                        directives.tag.push(dir);
+                        break;
+                    case "YAML":
+                        verifyVersion(dir, directives);
+                        directives.version.push(dir);
+                        break;
                 }
             }
-            path.pop();
-            return false;
-        };
-        return dfs(start) ? [...path] : null;
+        }
+        strIdx += rawLine.length + 1; // add raw length + 1 to compensate for deleted "\n" by split
     }
+    return directives;
 }
-/** Class to handle circular dependency check. */
-const circularDepClass = new CircularDepHandler();
+/* ---------------------- small helper to unescape quoted content ---------------------- */
+function unescapeQuoted(inner, quoteChar) {
+    return inner
+        .replace(/\\(u[0-9a-fA-F]{4}|["'\\bfnrtv])/g, (_m, g1) => {
+        if (g1 && g1.startsWith("u")) {
+            try {
+                return String.fromCharCode(parseInt(g1.slice(1), 16));
+            }
+            catch {
+                return g1;
+            }
+        }
+        switch (g1) {
+            case "b":
+                return "\b";
+            case "f":
+                return "\f";
+            case "n":
+                return "\n";
+            case "r":
+                return "\r";
+            case "t":
+                return "\t";
+            case "v":
+                return "\v";
+            case "'":
+                return "'";
+            case '"':
+                return '"';
+            case "\\":
+                return "\\";
+            default:
+                return g1;
+        }
+    })
+        .replace(new RegExp("\\\\" + quoteChar, "g"), quoteChar);
+}
 
-// Base new ErrorName and ErrorCode into YAMLError class
-class YAMLError extends yaml.YAMLError {
-    constructor(name, pos, code, message) {
-        // @ts-ignore
-        super(name, pos, code, message);
-    }
-}
-// New YAMLExprError class
-class YAMLExprError extends YAMLError {
-    constructor(pos, code, message) {
-        super("YAMLExprError", pos, code, message);
-    }
-}
-
-/** Regex that holds escape characters. */
-const ESCAPE_CHAR = /\"|\[/;
-/** Map that maps each escape character with it's closing character. */
-const ESCAPE_CLOSE_MAP = {
-    '"': '"',
-    "[": "]",
-};
-/** Delimiters used in the directives and expressions. */
-const DELIMITERS = /\s|\.|\=/;
-/** Regex to handle white spaces. */
-const WHITE_SPACE = /\s/;
-function divideNodepath(nodepath, pos) {
-    const parts = divideByDelimiter(nodepath, ".", pos);
-    const handledParts = parts.map(removeEscChar);
-    return handledParts;
-}
-/**
- * Method to divide directive into parts by dividing at non-escaped white spaces.
- * @param dir - Directive string that will be divided.
- * @param maxParts - Max number of parts as different directives accept x number of parts.
- * @returns Array of divided parts.
- */
-function divideDirective(dir, pos, maxParts) {
-    const parts = divideByDelimiter(dir, " ", pos, maxParts);
-    return parts;
-}
-function divideExpression(expr, pos, maxParts) {
-    const parts = divideByDelimiter(expr, " ", pos, maxParts);
-    return parts;
-}
-/**
- * Method to divide <key=value> string into key value pair (entery).
- * @param keyValue - <key=value> string that will be divided.
- * @returns Entery of key and value.
- */
-function divideKeyValue(keyValue, pos) {
-    const parts = divideByDelimiter(keyValue, "=", pos, 2);
-    return [parts[0], parts[1]];
-}
-function removeEscChar(str) {
-    // if string is less that 2 return str directly
-    if (str.length < 2)
-        return str;
-    // handle removal of leading and end escape char
-    if (ESCAPE_CHAR.test(str[0]) && ESCAPE_CHAR.test(str[str.length - 1])) {
-        str = str.slice(1, str.length - 1);
-    }
-    return str;
-}
-function removeEscBlackSlash(str) {
+function getFilename(tokens, validCheck) {
     var _a;
-    // handle removal of escape "\"
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            continue;
+        return (_a = tok.filename) === null || _a === void 0 ? void 0 : _a.value;
+    }
+}
+function getPrivate(tokens, validCheck, getTokens) {
+    let paths = {};
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            continue;
+        for (const [k, { pathParts, token }] of Object.entries(tok.resolvedPaths))
+            paths[k] = { pathParts, token, dirToken: tok };
+    }
+    return paths;
+}
+function getImport(tokens, alias, validCheck) {
+    var _a, _b;
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            continue;
+        if (((_a = tok.alias) === null || _a === void 0 ? void 0 : _a.value) === alias)
+            return {
+                path: (_b = tok.path) === null || _b === void 0 ? void 0 : _b.value,
+                defaultParams: tok.resolvedParams,
+            };
+    }
+}
+function getAllImports(tokens, validCheck) {
+    var _a, _b;
+    const imports = [];
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            continue;
+        imports.push({
+            alias: (_a = tok.alias) === null || _a === void 0 ? void 0 : _a.text,
+            path: (_b = tok.path) === null || _b === void 0 ? void 0 : _b.text,
+            defaultParams: tok.resolvedParams,
+        });
+    }
+    return imports;
+}
+function getParam(tokens, alias, validCheck) {
+    var _a, _b, _c;
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            continue;
+        if (((_a = tok.alias) === null || _a === void 0 ? void 0 : _a.value) === alias)
+            return {
+                defauleValue: (_b = tok.defValue) === null || _b === void 0 ? void 0 : _b.value,
+                yamlType: (_c = tok.yamlType) === null || _c === void 0 ? void 0 : _c.value,
+            };
+    }
+}
+function getAllParams(tokens, validCheck) {
+    var _a, _b, _c;
+    const params = [];
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            ;
+        params.push({
+            alias: (_a = tok.alias) === null || _a === void 0 ? void 0 : _a.text,
+            defauleValue: (_b = tok.defValue) === null || _b === void 0 ? void 0 : _b.value,
+            yamlType: (_c = tok.yamlType) === null || _c === void 0 ? void 0 : _c.value,
+        });
+    }
+    return params;
+}
+function getLocal(tokens, alias, validCheck) {
+    var _a, _b, _c;
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            continue;
+        if (((_a = tok.alias) === null || _a === void 0 ? void 0 : _a.value) === alias)
+            return {
+                defauleValue: (_b = tok.defValue) === null || _b === void 0 ? void 0 : _b.value,
+                yamlType: (_c = tok.yamlType) === null || _c === void 0 ? void 0 : _c.value,
+            };
+    }
+}
+function getAllLocals(tokens, validCheck) {
+    var _a, _b, _c;
+    const locals = [];
+    for (const tok of tokens) {
+        if (!tok.valid && validCheck)
+            ;
+        locals.push({
+            alias: (_a = tok.alias) === null || _a === void 0 ? void 0 : _a.text,
+            defauleValue: (_b = tok.defValue) === null || _b === void 0 ? void 0 : _b.value,
+            yamlType: (_c = tok.yamlType) === null || _c === void 0 ? void 0 : _c.value,
+        });
+    }
+    return locals;
+}
+
+/**
+ * Function to handle cache of YAML file, it initialize a dedicated module cache if not defined yet or if the file changed.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param tempState - Temporary state object that holds data needed for parsing this YAML file only.
+ */
+async function handleModuleCache(state, tempState) {
+    var _a;
+    // add path to parsedPaths
+    state.parsedPaths.add(tempState.resolvedPath);
+    // check if module is present in cache, if not init it and return
+    const moduleCache = state.cache.get(tempState.resolvedPath);
+    if (!moduleCache) {
+        await initModuleCache(state, tempState);
+        return;
+    }
+    // verify that text didn't change, if not init it and return
+    const hashedSource = hashStr(tempState.source);
+    if (hashedSource !== moduleCache.sourceHash) {
+        await initModuleCache(state, tempState);
+        return;
+    }
+    // add directive errors to tempState errors
+    tempState.errors.push(...moduleCache.directives.errors);
+    tempState.filename = (_a = getFilename(moduleCache.directives.filename, true)) !== null && _a !== void 0 ? _a : "";
+}
+/**
+ * Helper method for handleModuleCache to initialize new module cache for specific YAML file.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param tempState - Temporary state object that holds data needed for parsing this YAML file only.
+ */
+async function initModuleCache(state, tempState) {
+    var _a;
+    // get cache data
+    const sourceHash = hashStr(tempState.resolvedPath);
+    const directives = tokenizeDirectives(tempState.source, tempState);
+    const AST = yaml.parseDocument(tempState.source, tempState.options).contents;
+    // generate new cache
+    const cache = {
+        loadByParamHash: new Map(),
+        directives,
+        resolvedPath: tempState.resolvedPath,
+        sourceHash,
+        scalarTokens: {},
+        AST,
+    };
+    // save new cache in the state
+    state.cache.set(tempState.resolvedPath, cache);
+    //  add directive errors and filename to tempState
+    tempState.errors.push(...cache.directives.errors);
+    tempState.filename = (_a = getFilename(directives.filename, true)) !== null && _a !== void 0 ? _a : "";
+}
+/**
+ * Function to add parse entery to cache of specific YAML file.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param tempState - Temporary state object that holds data needed for parsing this YAML file only.
+ * @param parseEntery - Entery that holds parse value and errors of specific YAML file.
+ */
+function setParseEntery(state, tempState, parseEntery) {
+    var _a, _b;
+    // get path and params
+    const path = tempState.resolvedPath;
+    const comParams = {
+        ...((_a = tempState.options.universalParams) !== null && _a !== void 0 ? _a : {}),
+        ...((_b = tempState.options.params) !== null && _b !== void 0 ? _b : {}),
+    };
+    // get moduleCache params
+    const moduleCache = state.cache.get(path);
+    if (!moduleCache)
+        return;
+    // hash params
+    const hashedParams = hashParams(comParams);
+    // set entery in cache
+    moduleCache.loadByParamHash.set(hashedParams, parseEntery);
+}
+/**
+ *
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param filepath - Path of YAML file in filesystem.
+ * @param params - Params object to defined values of params in the parsed YAML file, note that it only affect YAML file at passed filepath and not passed to imported files.
+ * @param ignoreTags
+ * @returns
+ */
+function getParseEntery(state, filepath, params) {
+    const moduleCache = state.cache.get(filepath);
+    if (!moduleCache)
+        return;
+    // hash params and get cache of this load with params
+    const hashedParams = hashParams(params !== null && params !== void 0 ? params : {});
+    return moduleCache.loadByParamHash.get(hashedParams);
+}
+
+// basic helpers
+function current(state) {
+    return state.input[state.pos];
+}
+function eof(state) {
+    return state.pos >= state.len;
+}
+function advance(state, n = 1) {
+    const steps = Math.min(n, state.len - state.pos); // safe guard from going beyond max length
+    return state.pos + steps;
+}
+function peek(state, n = 1) {
+    return state.input.substr(state.pos, n);
+}
+// Function to handle line position
+function handleLinePos(state, start) {
+    let linePos = [];
+    let relLineStart = start - state.absLineStart;
+    let i = start;
+    while (i < state.pos) {
+        if (state.input[i] === "\n") {
+            linePos.push({
+                line: state.line,
+                start: relLineStart,
+                end: i - state.absLineStart,
+            });
+            relLineStart = 0;
+            state.line++;
+            state.absLineStart = i + 1;
+        }
+        i++;
+    }
+    linePos.push({
+        line: state.line,
+        start: relLineStart,
+        end: i - state.absLineStart,
+    });
+    return linePos;
+}
+function mergeTokenPosition(tok, parentTok) {
+    // add absolute start position of the parent
+    const parentStart = parentTok.pos.start;
+    tok.pos.start += parentStart;
+    tok.pos.end += parentStart;
+    // update line positions
+    for (let i = 0; i < tok.linePos.length; i++) {
+        const linePos = tok.linePos[i];
+        const parentLinePos = parentTok.linePos[linePos.line];
+        if (parentTok.linePos[0])
+            linePos.line += parentTok.linePos[0].line;
+        linePos.start += parentLinePos.start;
+        linePos.end += parentLinePos.start;
+    }
+}
+function mergeScalarPosition(tok, tempState) {
+    const start = tempState.range[0];
+    const end = tempState.range[1];
+    if (end === 99999)
+        return;
+    // add absolute start positions
+    tok.pos.start += start;
+    tok.pos.end += start;
+    // get line position of range
+    const parentLinePositions = getLinePosFromRange(tempState.source, tempState.lineStarts, [start, end]);
+    // update line positions
+    for (let i = 0; i < tok.linePos.length; i++) {
+        const linePos = tok.linePos[i];
+        const parentLinePos = parentLinePositions[linePos.line];
+        if (parentLinePositions[0])
+            linePos.line += parentLinePositions[0].line;
+        linePos.start += parentLinePos.start;
+        linePos.end += parentLinePos.start;
+    }
+}
+function readUntilClose(state, start, openChar, closeChar, ignoreTextTrim) {
+    var _a;
     let out = "";
-    let i = 0;
-    while (i < str.length) {
-        if (str[i] === "\\")
-            i++;
-        out += (_a = str[i]) !== null && _a !== void 0 ? _a : "";
-        i++;
-    }
-    return out;
-}
-/**
- * Method to divide string based on single delimiter.
- * @param str - String that will be divided.
- * @param delimiter - Delimiter used to divide string.
- * @param maxParts - Max parts before ommiting the remaining string.
- * @returns Array that holds divided parts.
- */
-function divideByDelimiter(str, delimiter, pos, maxParts) {
-    const delimiterFunc = getDelimiterFunc(delimiter);
-    const parts = [];
-    const len = str.length;
-    let start = 0;
-    let i = 0;
-    while (i < len) {
-        // get current char
-        const cur = str[i];
-        // if escape char skip until close
-        if (ESCAPE_CHAR.test(cur) && (i === 0 || DELIMITERS.test(str[i - 1]))) {
-            const closeChar = ESCAPE_CLOSE_MAP[cur];
-            const endIdx = handleEscapeBlock(str, i, closeChar, pos);
-            i = endIdx;
+    let depth = 0;
+    const checkOpen = openChar.length > 1
+        ? () => peek(state, openChar.length) === openChar
+        : (ch) => ch === openChar;
+    const checkClose = closeChar.length > 1
+        ? () => peek(state, closeChar.length) === closeChar
+        : (ch) => ch === closeChar;
+    while (!eof(state)) {
+        const ch = current(state);
+        if (ch === "\\") {
+            state.pos = advance(state);
+            if (eof(state))
+                break;
+            const esc = current(state);
+            const map = {
+                n: "\n",
+                r: "\r",
+                t: "\t",
+                "'": "'",
+                '"': '"',
+                "\\": "\\",
+            };
+            out += (_a = map[esc]) !== null && _a !== void 0 ? _a : esc;
+            state.pos = advance(state);
             continue;
         }
-        // if delimiter add to parts
-        if (delimiterFunc(cur)) {
-            const part = str.slice(start, i);
-            const handledPart = removeEscBlackSlash(part);
-            parts.push(handledPart);
-            if (maxParts && parts.length === maxParts)
-                return parts;
-            i++;
-            while (i < len && WHITE_SPACE.test(str[i]))
-                i++;
-            start = i;
+        if (checkOpen(ch))
+            depth++;
+        if (checkClose(ch)) {
+            if (depth === 0)
+                break;
+            depth--;
+        }
+        out += ch;
+        state.pos = advance(state);
+    }
+    const linePos = handleLinePos(state, start);
+    const raw = state.input.slice(start, state.pos);
+    const text = out.trim();
+    return { linePos, raw, text };
+}
+function read(state, start, steps, ignoreTextTrim) {
+    state.pos = advance(state, steps);
+    const linePos = handleLinePos(state, start);
+    const raw = state.input.slice(start, state.pos);
+    const text = raw.trim();
+    return { linePos, raw, text };
+}
+function readUntilChar(state, start, stopChar, ignoreTextTrim) {
+    var _a;
+    let out = "";
+    const checkStop = stopChar instanceof RegExp
+        ? (ch) => stopChar.test(ch)
+        : Array.isArray(stopChar)
+            ? (ch) => stopChar.includes(ch)
+            : stopChar.length > 1
+                ? () => peek(state, stopChar.length) === stopChar
+                : (ch) => ch === stopChar;
+    while (!eof(state)) {
+        const ch = current(state);
+        if (ch === "\\") {
+            state.pos = advance(state);
+            if (eof(state))
+                break;
+            const esc = current(state);
+            const map = {
+                n: "\n",
+                r: "\r",
+                t: "\t",
+                "'": "'",
+                '"': '"',
+                "\\": "\\",
+            };
+            out += (_a = map[esc]) !== null && _a !== void 0 ? _a : esc;
+            state.pos = advance(state);
             continue;
         }
-        i++;
-    }
-    if (start < len) {
-        const lastPart = str.slice(start);
-        const handledPart = removeEscBlackSlash(lastPart);
-        parts.push(handledPart);
-    }
-    return parts;
-}
-/**
- * Helper method to retun function that will be used to check delimiter.
- * @param delimiter - Delimiter used to divide string.
- * @returns Function that accept single charachter and decide if it matches delimiter used or not.
- */
-function getDelimiterFunc(delimiter) {
-    if (delimiter === " ")
-        return (ch) => WHITE_SPACE.test(ch);
-    else
-        return (ch) => ch === delimiter;
-}
-/**
- * Method to handle escape blocks by reading string until closing character and returning end index.
- * @param str - String that will be checked.
- * @param startIndex - Index at which scan will start.
- * @param closeChar - Character that closes escape block.
- * @returns end index.
- */
-function handleEscapeBlock(str, startIndex, closeChar, pos) {
-    const len = str.length;
-    let j = startIndex + 1;
-    let isClosed = false;
-    while (j < len) {
-        const cur = str[j];
-        if (cur === "\\") {
-            // handle escaped char (e.g. \" or \\)
-            if (j + 1 < len) {
-                j += 2;
-                continue;
-            }
-            else {
-                // trailing backslash — include it
-                j++;
-                continue;
-            }
-        }
-        if (cur === closeChar) {
-            isClosed = true;
-            j++; // move index to char after closing
+        if (checkStop(ch))
             break;
-        }
-        j++;
+        out += ch;
+        state.pos = advance(state);
     }
-    if (!isClosed)
-        throw new YAMLExprError(pos, "", `Opened escape char without close`);
-    return j;
+    const linePos = handleLinePos(state, start);
+    const raw = state.input.slice(start, state.pos);
+    const text = ignoreTextTrim ? out : out.trim();
+    return { linePos, raw, text };
 }
 
 /**
- * Method to handle directive by returning it's type and deviding it into it's structural parts creating directive parts object.
- * @param dir - Directive that will be divided.
- * @returns Object that holds type along with structural parts of this directive. returns undefined if invalid directive is passed.
+ * Token types from text step of scalar tokenizer
  */
-function handleDirective(dir, pos, errors) {
-    // handle TAG directive
-    if (dir.startsWith("%TAG")) {
-        const parts = handleDirTag(dir, pos, errors);
-        if (parts)
-            return { type: "TAG", parts };
-    }
-    // handle FILENAME directive
-    if (dir.startsWith("%FILENAME")) {
-        const parts = handleDirFilename(dir, pos, errors);
-        if (parts)
-            return { type: "FILENAME", parts };
-    }
-    // handle PARAM directive
-    if (dir.startsWith("%PARAM")) {
-        const parts = handleDirParam(dir, pos, errors);
-        if (parts)
-            return { type: "PARAM", parts };
-    }
-    // handle LOCAL directive
-    if (dir.startsWith("%LOCAL")) {
-        const parts = handleDirLocal(dir, pos, errors);
-        if (parts)
-            return { type: "LOCAL", parts };
-    }
-    // handle IMPORT directive
-    if (dir.startsWith("%IMPORT")) {
-        const parts = handleDirImport(dir, pos, errors);
-        if (parts)
-            return { type: "IMPORT", parts };
-    }
-    // handle PRIVATE directive
-    if (dir.startsWith("%PRIVATE"))
-        return { type: "PRIVATE", parts: handleDirPrivate(dir, pos) };
-}
-/** Method to handle tag directive deviding into it's structure parts. */
-function handleDirTag(dir, pos, errors) {
-    // remove statring %TAG and trim
-    const data = dir.replace("%TAG", "").trim();
-    // devide directive into parts
-    const parts = divideDirective(data, pos, 2);
-    const handle = parts[0];
-    const prefix = parts[1];
-    if (!handle || !prefix) {
-        errors.push(new YAMLExprError(pos, "", "You should pass handle and prefix after '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>"));
-        return;
-    }
-    return { alias: handle, metadata: prefix };
-}
-/** Method to handle private directive deviding into it's structure parts. */
-function handleDirPrivate(dir, pos, errors) {
-    // remove statring %PRIVATE and trim
-    const data = dir.replace("%PRIVATE", "").trim();
-    // divide directive into parts, all parts are <private-nodes>
-    const privateNodes = divideDirective(data, pos);
-    // return private nodes
-    return { arrMetadata: privateNodes };
-}
-/** Method to handle local directive deviding into it's structure parts. */
-function handleDirLocal(dir, pos, errors) {
-    // remove statring %LOCAL and trim
-    const data = dir.replace("%LOCAL", "").trim();
-    // divide directive into parts, first part is <alias> and second is <def-value>
-    const parts = divideDirective(data, pos, 2);
-    const alias = parts[0];
-    const defValue = parts[1];
-    // verify that alais is present
-    if (!alias) {
-        errors.push(new YAMLExprError(pos, "", "You should pass alias after '%LOCAL' directive, structure of PARAM directive: %LOCAL <alias>"));
-        return;
-    }
-    // remove wrapping escape char if present
-    const handledAlias = removeEscChar(alias);
-    const handledDefValue = defValue && removeEscChar(defValue);
-    // return parts
-    return { alias: handledAlias, defValue: handledDefValue };
-}
-/** Method to handle param directive deviding into it's structure parts. */
-function handleDirParam(dir, pos, errors) {
-    // remove statring %PARAM and trim
-    const data = dir.replace("%PARAM", "").trim();
-    // divide directive into parts, first part is <alias> and second is <def-value>
-    const parts = divideDirective(data, pos, 2);
-    const alias = parts[0];
-    const defValue = parts[1];
-    // verify that alais is present
-    if (!alias) {
-        errors.push(new YAMLExprError(pos, "", "You should pass alias after '%PARAM' directive, structure of PARAM directive: %PARAM <alias>"));
-        return;
-    }
-    // remove wrapping escape char if present
-    const handledAlias = removeEscChar(alias);
-    const handledDefValue = defValue && removeEscChar(defValue);
-    // return parts
-    return { alias: handledAlias, defValue: handledDefValue };
-}
-/** Method to handle filename directive deviding into it's structure parts. */
-function handleDirFilename(dir, pos, errors) {
-    // remove statring %FILENAME and trim
-    const data = dir.replace("%FILENAME", "").trim();
-    // remove wrapping escape char if present
-    const handledMetadata = data && removeEscChar(data);
-    // return error if empty filename was used
-    if (!handledMetadata) {
-        errors.push(new YAMLExprError(pos, "", "You should pass a scalar after %FILENAME directive."));
-        return;
-    }
-    // the filename is composed of only the <filename> so return directly
-    return { metadata: handledMetadata };
-}
-/** Method to handle import directive deviding into it's structure parts. */
-function handleDirImport(dir, pos, errors) {
-    // remove statring %IMPORT and trim
-    const data = dir.replace("%IMPORT", "").trim();
-    // divide directive into parts, first part is <alias> and second is <path> and last part is [key=value ...]
-    const parts = divideDirective(data, pos);
-    const alias = parts[0];
-    const path = parts[1];
-    const keyValueParts = parts.slice(2);
-    // verify that alais and path are present
-    if (!alias || !path) {
-        errors.push(new YAMLExprError(pos, "", "You should pass alias and path after '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...]"));
-        return;
-    }
-    // remove wrapping escape char if present
-    const handledAlias = removeEscChar(alias);
-    const handledPath = removeEscChar(path);
-    // handle conversion of keyValue parts into an object
-    const keyValue = {};
-    if (keyValueParts)
-        for (const keyVal of keyValueParts) {
-            const [key, value] = divideKeyValue(keyVal, pos);
-            // remove wrapping escape char if present
-            const handledKey = key && removeEscChar(key);
-            const handledValue = value && removeEscChar(value);
-            // add to keyValue object
-            keyValue[handledKey] = handledValue;
-        }
-    // return parts
-    return { alias: handledAlias, metadata: handledPath, keyValue };
-}
-function getDirectives(str) {
-    /** Array to hold defined directives. */
-    const dirs = [];
-    /** Number to track position in the loop of the hole str. */
-    let i = 0;
-    // Start looping the string
-    while (i < str.length) {
-        /** Var to hold start if first char in the new line is "%", otherwise will be undefined. */
-        let start;
-        // if current char is a "%" that mark start of a directive
-        if (str[i] === "%")
-            start = i;
-        // skip to the next new line
-        while (i < str.length)
-            if (str[i] !== "\n")
-                i++;
-            else {
-                i++;
-                break;
-            }
-        // if start is defined (is dir) then add the directive
-        if (start !== undefined) {
-            const dir = str.slice(start, i);
-            dirs.push({ dir, pos: [start, i] });
-        }
-    }
-    // return directives
-    return dirs;
-}
-
+var TextTokenType;
+(function (TextTokenType) {
+    TextTokenType["TEXT"] = "TEXT";
+    TextTokenType["EXPR"] = "EXPR";
+    TextTokenType["EOF"] = "EOF";
+})(TextTokenType || (TextTokenType = {}));
 /**
- * Method to add to tags map where key is handle for the tag and value is prefix.
- * @param tagsMap - Reference to the map that holds tags's handles and prefixes and will be passed to directives object.
- * @param parts - Parts of the line.
+ * Token types from expression step of scalar tokenizer
  */
-function handleTags(tagsMap, parts) {
-    const { alias, metadata } = parts;
-    tagsMap.set(alias, metadata);
-}
-
+var ExprTokenType;
+(function (ExprTokenType) {
+    ExprTokenType["PATH"] = "PATH";
+    ExprTokenType["DOT"] = "DOT";
+    ExprTokenType["ARGS"] = "ARGS";
+    ExprTokenType["WHITE_SPACE"] = "WHITE_SPACE";
+    ExprTokenType["TYPE"] = "TYPE";
+    ExprTokenType["EOF"] = "EOF";
+})(ExprTokenType || (ExprTokenType = {}));
 /**
- * Method to add to params map where key is alias for the param and value is the default value.
- * @param paramsMap - Reference to the map that holds params's aliases and default values and will be passed to directives object.
- * @param parts - Parts of the line.
+ * Token types from arguments step of scalar tokenizer
  */
-function handleParams(paramsMap, parts) {
-    // get alias and defValue from parts
-    const { alias, defValue } = parts;
-    // add the alias with default value to the paramsMap
-    paramsMap.set(alias, defValue);
-}
-
+var ArgsTokenType;
+(function (ArgsTokenType) {
+    ArgsTokenType["KEY_VALUE"] = "KEY_VALUE";
+    ArgsTokenType["COMMA"] = "COMMA";
+    ArgsTokenType["EOF"] = "EOF";
+})(ArgsTokenType || (ArgsTokenType = {}));
 /**
- * Method to push private nodes to the private array of directives object.
- * @param privateArr - Reference to the array that holds private nodes and will be passed to directives object.
- * @param parts - Directive parts object with metadata being private nodes.
+ * Token types from keyValue step of scalar tokenizer
  */
-function handlePrivate(privateArr, parts) {
-    const privateNodes = parts.arrMetadata;
-    if (Array.isArray(privateNodes))
-        for (const p of privateNodes)
-            privateArr.push(p);
-}
+var KeyValueTokenType;
+(function (KeyValueTokenType) {
+    KeyValueTokenType["EQUAL"] = "EQUAL";
+    KeyValueTokenType["KEY"] = "KEY";
+    KeyValueTokenType["VALUE"] = "VALUE";
+    KeyValueTokenType["EOF"] = "EOF";
+})(KeyValueTokenType || (KeyValueTokenType = {}));
 
-/** Method to verify imports structure (<alias> <path>) and add them to the map. */
-/**
- * Method to add to imports map where key is alias for the import and value is the path and default params values passed to this import.
- * @param importsMap - Reference to the map that holds imports's aliases and path with default params values and will be passed to directives object.
- * @param parts - Parts of the line.
- */
-function handleImports(importsMap, parts) {
-    // get alias and path and params key value from parts
-    const { alias, metadata: path, keyValue: params } = parts;
-    // add parts to the map
-    importsMap.set(alias, { path, params });
-}
-
-/**
- * Method to add to locals map where key is alias for the local and value is the default value.
- * @param localsMap - Reference to the map that holds local's aliases and default values and will be passed to directives object.
- * @param parts - Parts of the line.
- */
-function handleLocals(localsMap, parts) {
-    // get alias and defValue from parts
-    const { alias, defValue } = parts;
-    // add the alias with default value to the paramsMap
-    localsMap.set(alias, defValue);
-}
-
-/**
- * Method to return filename. Only method here that returns value as filename is a string and can't be referenced.
- * @param parts - Directive parts object with metadata filename.
- * @returns filename.
- */
-function handleFilename(parts) {
-    return parts.metadata;
-}
-
-/**
- * Method to read directives in YAML string, handle wrapper specific directives by converting them into directives object.
- * @param str - String passed in load function.
- * @returns Directives object which holds meta data about directives to be used in the resolver.
- */
-function handleDir(str) {
-    // array to hold errors
-    const errors = [];
-    // define main arrays and maps to hold directives data
-    /** Holds list of private node's definition. */
-    const privateArr = [];
-    /** Holds list of tag handles and prefix values used in the module. */
-    const tagsMap = new Map();
-    /** Holds list of param's aliases and default values used in the module. */
-    const paramsMap = new Map();
-    /** Holds list of local's aliases and default values used in the module. */
-    const localsMap = new Map();
-    /** Map of aliases for imports and import data as path and modules params. */
-    const importsMap = new Map();
-    /** Filename defined in directives. */
-    let filename = "";
-    // get dirs from str
-    const dirs = getDirectives(str);
-    for (const dir of dirs) {
-        const { dir: dirStr, pos } = dir;
-        const trimmedDir = dirStr.trim();
-        const dirData = handleDirective(trimmedDir, pos, errors);
-        if (!dirData)
-            continue;
-        // destructure directive data
-        const { type, parts: directiveParts } = dirData;
-        switch (type) {
-            case "TAG":
-                handleTags(tagsMap, directiveParts);
-                break;
-            case "PARAM":
-                handleParams(paramsMap, directiveParts);
-                break;
-            case "PRIVATE":
-                handlePrivate(privateArr, directiveParts);
-                break;
-            case "IMPORT":
-                handleImports(importsMap, directiveParts);
-                break;
-            case "LOCAL":
-                handleLocals(localsMap, directiveParts);
-                break;
-            case "FILENAME":
-                filename = handleFilename(directiveParts);
-                break;
-        }
+// main function
+function tokenizeKeyValue(input, argsTok, tokenizeTextFunc) {
+    var _a;
+    // handle tokens
+    let tokens = [];
+    let state = initArgsTokenState$1(input);
+    while (true) {
+        const toks = nextArgsToken$1(state);
+        tokens.push(...toks);
+        for (const t of toks)
+            mergeTokenPosition(t, argsTok);
+        if (((_a = tokens[tokens.length - 1]) === null || _a === void 0 ? void 0 : _a.type) === KeyValueTokenType.EOF)
+            break;
     }
+    // resolve any value tokens using text tokenizer
+    for (const t of tokens)
+        if (t.type === KeyValueTokenType.VALUE)
+            t.valueToks = tokenizeTextFunc(t.raw ? t.raw.trim() : "", t);
+    // return
+    return tokens;
+}
+function nextArgsToken$1(state) {
+    // get current character
+    const ch = current(state);
+    // tokens array
+    let tokens = [];
+    // if eof reutnr last token
+    if (eof(state)) {
+        const start = state.pos;
+        const linePos = handleLinePos(state, start);
+        const tok = {
+            type: KeyValueTokenType.EOF,
+            raw: "",
+            text: "",
+            value: "",
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        return tokens;
+    }
+    if (ch === "=") {
+        const start = state.pos;
+        const { raw, text, linePos } = read(state, start, 1);
+        const tok = {
+            type: KeyValueTokenType.EQUAL,
+            raw,
+            text,
+            value: text,
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        state.afterEqual = true;
+    }
+    if (ch === '"' || ch === "'")
+        return readQuoted(state);
+    else
+        return readUnQuoted(state);
+}
+function readQuoted(state) {
+    let tokens = [];
+    const start = state.pos;
+    const { raw, text, linePos } = readUntilChar(state, start, current(state));
+    if (!text)
+        return tokens; // if only white space omit token
+    const value = state.afterEqual ? getValueFromText(text) : text;
+    const tok = {
+        type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
+        raw,
+        text,
+        value,
+        quoted: true,
+        linePos,
+        pos: { start, end: state.pos },
+    };
+    tokens.push(tok);
+    return tokens;
+}
+function readUnQuoted(state) {
+    let tokens = [];
+    const start = state.pos;
+    const { raw, text, linePos } = readUntilChar(state, start, ["=", ","]);
+    if (!text)
+        return tokens; // if only white space omit token
+    const value = state.afterEqual ? getValueFromText(text) : text;
+    const tok = {
+        type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
+        raw,
+        text,
+        value,
+        quoted: false,
+        linePos,
+        pos: { start, end: state.pos },
+    };
+    tokens.push(tok);
+    return tokens;
+}
+function initArgsTokenState$1(input) {
     return {
-        tagsMap,
-        privateArr,
-        paramsMap,
-        localsMap,
-        importsMap,
-        filename,
-        errors,
-        directives: dirs,
+        input,
+        len: input.length,
+        pos: 0,
+        line: 0,
+        absLineStart: 0,
+        afterEqual: false,
     };
 }
 
-/**
- * Method to check if mapping (object) in raw load is actaully mapping expression. mapping interpolations are defined with this structure in YAML file: { $<int> }
- * which is pared by js-yaml to: { $<int>: null }. so it actally check if it's a one key object and the key is valid expression syntax with value null.
- * @param map - Mapping that will be checked.
- * @returns Boolean that indicate if it's an expression or not.
- */
-function isMapExpr(map) {
-    if (!map.flow)
-        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a flow syntax
-    if (map.items.length !== 1)
-        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a single key
-    if (!(map.items[0].key instanceof yaml.Scalar))
-        return { isExpr: false, expr: "", scalar: undefined }; // make sure key is scalar
-    if (map.items[0].value !== null)
-        return { isExpr: false, expr: "", scalar: map.items[0].key }; // make sure value is null
-    const key = map.items[0].key.value; // get value of the scalar
-    if (typeof key !== "string")
-        return { isExpr: false, expr: "", scalar: map.items[0].key }; // make sure value of the Scalar instance is a string
-    const tStr = key.trim(); // trim string
-    const isExpr = tStr[0] === "$" && tStr[1] !== "$" && tStr[1] !== "{"; // make sure it's valid syntax
-    return { isExpr, expr: tStr, scalar: map.items[0].key }; // make sure it's valid syntax
+// main function
+function tokenizeArgs(input, exprTok, tokenizeTextFunc) {
+    // handle tokens
+    let tokens = [];
+    let state = initArgsTokenState(input);
+    while (true) {
+        const toks = nextArgsToken(state);
+        tokens.push(...toks);
+        for (const t of toks)
+            mergeTokenPosition(t, exprTok);
+        if (tokens[tokens.length - 1].type === ArgsTokenType.EOF)
+            break;
+    }
+    // resolve any value tokens using text tokenizer
+    for (const t of tokens)
+        if (t.type === ArgsTokenType.KEY_VALUE)
+            t.keyValueToks = tokenizeKeyValue(t.raw ? t.raw : "", t, tokenizeTextFunc);
+    // return
+    return tokens;
 }
-/**
- * Method to check if sequence (array) in raw load is actaully sequence expression. sequence interpolations are defined with this structure in YAML file: [ $<int> ]
- * which is pared by js-yaml to: [ $<int> ]. so it actally check if it's a one item array and the this item is valid expression syntax.
- * @param seq - Sequence that will be checked.
- * @returns Boolean that indicate if it's an expression or not.
- */
-function isSeqExpr(seq) {
-    if (!seq.flow)
-        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a flow syntax
-    if (seq.items.length !== 1)
-        return { isExpr: false, expr: "", scalar: undefined }; // make sure it's a single item
-    if (!(seq.items[0] instanceof yaml.Scalar))
-        return { isExpr: false, expr: "", scalar: undefined }; // make sure item is scalar
-    const item = seq.items[0].value; // get value of the scalar
-    if (typeof item !== "string")
-        return { isExpr: false, expr: "", scalar: seq.items[0] }; // make sure value of the Scalar instance is a string
-    const tStr = item.trim(); // trim string
-    const isExpr = tStr[0] === "$" && tStr[1] !== "$" && tStr[1] !== "{"; // make sure it's valid syntax
-    return { isExpr, expr: tStr, scalar: seq.items[0] };
+function nextArgsToken(state) {
+    // get current character
+    const ch = current(state);
+    // tokens array
+    let tokens = [];
+    // if eof reutnr last token
+    if (eof(state)) {
+        const start = state.pos;
+        const linePos = handleLinePos(state, start);
+        const tok = {
+            type: ArgsTokenType.EOF,
+            raw: "",
+            text: "",
+            value: "",
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        return tokens;
+    }
+    if (ch === ",") {
+        const start = state.pos;
+        const { raw, text, linePos } = read(state, start, 1);
+        const tok = {
+            type: ArgsTokenType.COMMA,
+            raw,
+            text,
+            value: text,
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        return tokens;
+    }
+    // handle KeyValue pair token
+    const start = state.pos;
+    const { raw, text, linePos } = readUntilChar(state, start, ",");
+    const value = text;
+    const tok = {
+        type: ArgsTokenType.KEY_VALUE,
+        raw,
+        text,
+        value,
+        quoted: false,
+        linePos,
+        pos: { start, end: state.pos },
+    };
+    tokens.push(tok);
+    return tokens;
 }
-/**
- * Method to check if scalar (string) in raw load is actaully scalar expression. scalar interpolations are defined with this structure in YAML file: $<int>
- * which is pared by js-yaml to: $<int>. so it actally check if the string is valid expression syntax.
- * @param scalar - Scalar that will be checked.
- * @returns Boolean that indicate if it's an expression or not.
- */
-function isScalarExpr(scalar) {
-    const str = scalar.value; // get value of the scalar
-    if (typeof str !== "string")
-        return { isExpr: false, expr: "" }; // make sure value of the Scalar instance is a string
-    const tStr = str.trim(); // trim string
-    const isExpr = tStr[0] === "$" && tStr[1] !== "$" && tStr[1] !== "{"; // make sure it's valid syntax
-    return { isExpr, expr: tStr };
-}
-function isStringExpr(str) {
-    const tStr = str.trim(); // trim string
-    const isExpr = tStr[0] === "$" && tStr[1] !== "$" && tStr[1] !== "{"; // make sure it's valid syntax
-    return { isExpr, expr: tStr };
-}
-
-/** Regex to capture starting dot. */
-const START_WITH_DOT = /^\./;
-async function handleExpression(expr, ctx) {
-    if (expr.startsWith("$this"))
-        return { type: "this", parts: await handleExprThis(expr, ctx) };
-    if (expr.startsWith("$import"))
-        return { type: "import", parts: await handleExprImport(expr, ctx) };
-    if (expr.startsWith("$local"))
-        return { type: "local", parts: handleExprLocal(expr, ctx) };
-    if (expr.startsWith("$param"))
-        return { type: "param", parts: handleExprParam(expr, ctx) };
-}
-async function handleExprThis(expr, ctx) {
-    var _a, _b;
-    // get current position (used in error messages)
-    const pos = ctx.range ? ctx.range : [0, 99999];
-    // only trim for now (as we want to get part with $this)
-    const data = expr.trim();
-    // divide expression into parts, first part is <nodepath> and second is [key-value ...]
-    const parts = divideExpression(data, pos, 2);
-    const nodepathStr = (_b = (_a = parts[0]) === null || _a === void 0 ? void 0 : _a.replace("$this", "")) === null || _b === void 0 ? void 0 : _b.replace(START_WITH_DOT, "");
-    const keyValueParts = parts.slice(1);
-    // verify that nodepathStr is present ($this should have path)
-    if (!nodepathStr)
-        throw new YAMLExprError(pos, "", "You should pass node path after '$this' expression, structure of this expression: $this.<node-path> [key=value ...]");
-    // handle division of nodepath string into parts
-    const nodepath = divideNodepath(nodepathStr, pos);
-    const handledNodepath = nodepath.map(removeEscChar);
-    // handle conversion of keyValue parts into an object
-    const keyValue = {};
-    if (keyValueParts)
-        for (const keyVal of keyValueParts) {
-            const [key, value] = divideKeyValue(keyVal, pos);
-            // remove wrapping escape char if present
-            const handledKey = key && removeEscChar(key);
-            const handledValue = value && removeEscChar(value);
-            // resolve value if it was expression
-            const resValue = await resolveUnknown(handledValue, true, true, ctx);
-            // add to keyValue object
-            keyValue[handledKey] = resValue;
-        }
-    // return parts
-    return { nodepath: handledNodepath, keyValue };
-}
-async function handleExprImport(expr, ctx) {
-    var _a, _b;
-    // get current position (used in error messages)
-    const pos = ctx.range ? ctx.range : [0, 99999];
-    // only trim for now (as we want to get part with $import)
-    const data = expr.trim();
-    // divide expression into parts, first part is <nodepath> and second is [key-value ...]
-    const parts = divideExpression(data, pos, 2);
-    const nodepathStr = (_b = (_a = parts[0]) === null || _a === void 0 ? void 0 : _a.replace("$import", "")) === null || _b === void 0 ? void 0 : _b.replace(START_WITH_DOT, "");
-    const keyValueParts = parts.slice(1);
-    // handle division of nodepath string into parts
-    const nodepath = divideNodepath(nodepathStr, pos);
-    const handledNodepath = nodepath.map(removeEscChar);
-    // handle conversion of keyValue parts into an object
-    const keyValue = {};
-    if (keyValueParts)
-        for (const keyVal of keyValueParts) {
-            const [key, value] = divideKeyValue(keyVal, pos);
-            // remove wrapping escape char if present
-            const handledKey = key && removeEscChar(key);
-            const handledValue = value && removeEscChar(value);
-            // resolve value if it was expression
-            const resValue = await resolveUnknown(handledValue, true, true, ctx);
-            // add to keyValue object
-            keyValue[handledKey] = resValue;
-        }
-    // return parts
-    return { nodepath: handledNodepath, keyValue };
-}
-function handleExprLocal(expr, ctx) {
-    // get current position (used in error messages)
-    const pos = ctx.range ? ctx.range : [0, 99999];
-    // remove statring $local and trim, also remove dot if new string starts with a dot
-    const data = expr.replace("$local", "").trim().replace(START_WITH_DOT, "");
-    // get alias (first and only part)
-    const parts = divideExpression(data, pos, 1);
-    const alias = parts[0];
-    if (!alias)
-        throw new YAMLExprError(pos, "", "You should pass alias after '$local' expression, strcuture of local expression: $local.<alias>");
-    const handledAlias = removeEscChar(alias);
-    return { alias: handledAlias };
-}
-function handleExprParam(expr, ctx) {
-    // get current position (used in error messages)
-    const pos = ctx.range ? ctx.range : [0, 99999];
-    // remove statring $param and trim, also remove dot if new string starts with a dot
-    const data = expr.replace("$param", "").trim().replace(START_WITH_DOT, "");
-    // get alias (first and only part)
-    const parts = divideExpression(data, pos, 1);
-    const alias = parts[0];
-    if (!alias)
-        throw new YAMLExprError(pos, "", "You should pass alias after '$param' expression, structure of local expression: $local.<alias>");
-    const handledAlias = removeEscChar(alias);
-    return { alias: handledAlias };
+function initArgsTokenState(input) {
+    return {
+        input,
+        len: input.length,
+        pos: 0,
+        line: 0,
+        absLineStart: 0,
+    };
 }
 
+// main function
+function tokenizeExpr(input, textTok, tokenizeTextFunc) {
+    // handle tokens
+    let tokens = [];
+    let state = initExprTokenState(input);
+    while (true) {
+        const toks = nextExprToken(state);
+        tokens.push(...toks);
+        for (const t of toks)
+            mergeTokenPosition(t, textTok);
+        if (tokens[tokens.length - 1].type === ExprTokenType.EOF)
+            break;
+    }
+    // tokenize args inside ARGS token
+    for (const t of tokens)
+        if (t.type === ExprTokenType.ARGS)
+            t.argTokens = tokenizeArgs(t.raw ? t.raw : "", t, tokenizeTextFunc);
+    // return
+    return tokens;
+}
+function nextExprToken(state) {
+    // get current character
+    const ch = current(state);
+    // tokens array
+    let tokens = [];
+    // if eof reutnr last token
+    if (eof(state)) {
+        const start = state.pos;
+        const linePos = handleLinePos(state, start);
+        const tok = {
+            type: ExprTokenType.EOF,
+            raw: "",
+            text: "",
+            value: "",
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        return tokens;
+    }
+    // if dot return dot token, not that it can only be used before any white spaces present
+    if (ch === "." && !state.afterWhiteSpace) {
+        const start = state.pos;
+        const { raw, text, linePos } = read(state, start, 1);
+        const tok = {
+            type: ExprTokenType.DOT,
+            raw,
+            text,
+            value: text,
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        return tokens;
+    }
+    // handle opening "("
+    if (ch === "(" && !state.afterParen) {
+        // skip "(" sign
+        state.pos = advance(state);
+        // loop until ")" mark
+        const start = state.pos;
+        const { raw, text, linePos } = readUntilClose(state, start, "(", ")");
+        const value = text;
+        const tok = {
+            type: ExprTokenType.ARGS,
+            raw,
+            text,
+            value,
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        // skip "(" sign
+        state.pos = advance(state);
+        state.afterParen = true;
+        // return
+        return tokens;
+    }
+    // if whitespace return white space token and every text after it will be type token
+    if (/\s/.test(ch)) {
+        // handle white space token
+        let start = state.pos;
+        const { raw: wRaw, text: wText, linePos: wLinePos, } = readUntilChar(state, start, /\s/, true);
+        const wTok = {
+            type: ExprTokenType.WHITE_SPACE,
+            raw: wRaw,
+            text: wText,
+            value: wText,
+            quoted: false,
+            linePos: wLinePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(wTok);
+        state.afterWhiteSpace = true;
+        // handle type token
+        start = state.pos;
+        const { raw: tRaw, text: tText, linePos: tLinePos, } = read(state, start, Infinity);
+        const exprTok = {
+            type: ExprTokenType.TYPE,
+            raw: tRaw,
+            text: tText,
+            value: tText,
+            quoted: false,
+            linePos: tLinePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(exprTok);
+        return tokens;
+    }
+    if (ch === '"' || ch === "'")
+        return readQuotedPath(state);
+    else
+        return readPath(state);
+}
+function readQuotedPath(state) {
+    let tokens = [];
+    const start = state.pos;
+    const { raw, text, linePos } = readUntilChar(state, start, current(state));
+    const value = text;
+    const tok = {
+        type: ExprTokenType.PATH,
+        raw,
+        text,
+        value,
+        quoted: true,
+        linePos,
+        pos: { start, end: state.pos },
+    };
+    tokens.push(tok);
+    return tokens;
+}
+function readPath(state) {
+    var _a;
+    let tokens = [];
+    let out = "";
+    const start = state.pos;
+    // Manual loop here to add custom check
+    while (!eof(state)) {
+        const ch = current(state);
+        if (ch === "." || (ch === "(" && !state.afterParen))
+            break;
+        if (ch === "\\") {
+            state.pos = advance(state);
+            if (eof(state))
+                break;
+            const esc = current(state);
+            const map = {
+                n: "\n",
+                r: "\r",
+                t: "\t",
+                "'": "'",
+                '"': '"',
+                "\\": "\\",
+            };
+            out += (_a = map[esc]) !== null && _a !== void 0 ? _a : esc;
+            state.pos = advance(state);
+            continue;
+        }
+        out += ch;
+        state.pos = advance(state);
+    }
+    const linePos = handleLinePos(state, start);
+    const raw = state.input.slice(start, state.pos);
+    const text = out.trim();
+    const value = text;
+    const tok = {
+        type: ExprTokenType.PATH,
+        raw,
+        text,
+        value,
+        quoted: false,
+        linePos,
+        pos: { start, end: state.pos },
+    };
+    tokens.push(tok);
+    return tokens;
+}
+function initExprTokenState(input) {
+    return {
+        input,
+        len: input.length,
+        pos: 0,
+        line: 0,
+        absLineStart: 0,
+        afterParen: false,
+        afterWhiteSpace: false,
+    };
+}
+
+// main function
+function tokenizeText(input, keyValueTok, tempState) {
+    // handle tokens
+    let state = initTextTokenizerState(input);
+    let tokens = [];
+    while (true) {
+        const toks = nextTextToken(state);
+        tokens.push(...toks);
+        if (tempState)
+            for (const t of toks)
+                mergeScalarPosition(t, tempState);
+        if (keyValueTok)
+            for (const t of toks)
+                mergeTokenPosition(t, keyValueTok);
+        if (tokens[tokens.length - 1].type === TextTokenType.EOF)
+            break;
+    }
+    // tokenize expression inside EXPR tokens
+    for (const t of tokens)
+        if (t.type === TextTokenType.EXPR)
+            t.exprTokens = tokenizeExpr(t.raw ? t.raw : "", t, tokenizeText);
+    // return
+    return tokens;
+}
+// function to get next token
+function nextTextToken(state) {
+    // get current character
+    const ch = current(state);
+    // tokens array
+    let tokens = [];
+    // if eof reutnr last token
+    if (eof(state)) {
+        const start = state.pos;
+        const linePos = handleLinePos(state, start);
+        const tok = {
+            type: TextTokenType.EOF,
+            raw: "",
+            text: "",
+            value: "",
+            quoted: false,
+            linePos,
+            pos: { start, end: state.pos },
+        };
+        tokens.push(tok);
+        return tokens;
+    }
+    // handle interpolation opening
+    if (peek(state, 2) === "${") {
+        // skip the "${" sign
+        state.pos = advance(state, 2);
+        // loop until "}" mark
+        const start = state.pos;
+        const { raw, text, linePos } = readUntilClose(state, start, "${", "}");
+        const value = text;
+        const tok = {
+            type: TextTokenType.EXPR,
+            raw,
+            text,
+            value,
+            quoted: false,
+            linePos: linePos,
+            pos: { start, end: state.pos },
+            freeExpr: false,
+        };
+        tokens.push(tok);
+        // skip "}"
+        state.pos = advance(state);
+        return tokens;
+    }
+    // handle string starting with non escaped "$" sign
+    if (state.pos === 0 && ch === "$") {
+        // skip "$" mark
+        state.pos = advance(state);
+        // handle expr token (read until end of the input)
+        const start = state.pos;
+        const { raw, text, linePos } = read(state, start, Infinity);
+        const value = text;
+        const exprTok = {
+            type: TextTokenType.EXPR,
+            raw,
+            text,
+            value,
+            quoted: false,
+            linePos: linePos,
+            pos: { start, end: state.pos },
+            freeExpr: true,
+        };
+        tokens.push(exprTok);
+        return tokens;
+    }
+    // read until first interpolation mark "${"
+    const start = state.pos;
+    const { raw, text, linePos } = readUntilChar(state, start, "${", true);
+    const value = text;
+    const textTok = {
+        type: TextTokenType.TEXT,
+        raw,
+        text,
+        value,
+        quoted: false,
+        linePos,
+        pos: { start, end: state.pos },
+    };
+    tokens.push(textTok);
+    return tokens;
+}
+// helper to init state
+function initTextTokenizerState(input) {
+    return {
+        input,
+        len: input.length,
+        pos: 0,
+        line: 0,
+        absLineStart: 0,
+    };
+}
+
+//////////////
+// Tokenizer is split into five steps as follows:
+//  - first step is text tokenizer which devide input into: either $<Expr> or <Text> ${<Expr>} <Text>
+//  - second step is expression tokenizer which takes every <Expr> token from previous step and tokenize it into: $[Path ...](<Args>) as <Type>
+//  - third step is args tokenizer which takes <Args> token from previous step and tokenize it into: [<KeyValuePair> ,,,]
+//  - fourth step is keyValue tokenizer which takges <KeyValuePair> token from previous step and tokenize it into: <Key>=<Value>
+//  - fifth and last step includes passing the <value> token again to the text tokenizer, making a loop until text is fully resolved
+/////////////
+// main functions
+function tokenizeScalar(input, tempState) {
+    return tokenizeText(input, undefined, tempState);
+}
+
+function verifyNodeType(node, type) {
+    if (!type)
+        return true;
+    switch (type) {
+        case "as map":
+            return typeof node === "object" && !Array.isArray(node) && node != null;
+        case "as seq":
+            return Array.isArray(node);
+        case "as scalar":
+            return (typeof node === "string" ||
+                typeof node === "number" ||
+                typeof node === "boolean");
+        default:
+            return true;
+    }
+}
 /**
  * Method to traverse through nodes tree. works sync.
  * @param tree - Node tree that will be traversed.
  * @param path - Path of traversal.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value after traversal and retuning subnode.
  */
-async function traverseNodes(tree, path, ctx) {
+async function traverseNodes(tree, paths, state, tempState, skipNum) {
     // start node from base of the tree
     let node = tree;
+    let start = skipNum ? skipNum : 0;
     // start traversing
-    for (const p of path) {
+    for (let i = start; i < paths.length; i++) {
+        // get path
+        const p = paths[i];
+        // get path and token
+        const { path, tok } = p;
         // if path part is a number handle it accordingly
-        const { node: childNode, resolved } = Number.isNaN(Number(p))
-            ? await handleStrPath(node, p, ctx)
-            : await handleNumPath(node, Number(p), ctx);
+        const { node: childNode, resolved } = Number.isNaN(Number(path))
+            ? await handleStrPath(node, path, state, tempState)
+            : await handleNumPath(node, Number(path), state, tempState);
         // if node resolved add error and break
         if (!resolved) {
-            ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Invalid path in expression: ${path.join(".")}`));
+            const pathStr = paths.map((p) => p.path).join(".");
+            tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", `Path: ${pathStr} is not present in target YAML tree.`));
             node = undefined;
             break;
         }
@@ -1127,7 +2014,7 @@ async function traverseNodes(tree, path, ctx) {
     // return node
     return node;
 }
-async function handleStrPath(node, pathPart, ctx) {
+async function handleStrPath(node, pathPart, state, tempState) {
     // if parent node is a YAMLMap, check all the keys
     if (node instanceof yaml.YAMLMap) {
         for (const pair of node.items) {
@@ -1137,7 +2024,7 @@ async function handleStrPath(node, pathPart, ctx) {
             else
                 key = pair.key;
             if (key === pathPart) {
-                const resVal = await ctx.resolveFunc(pair.value, true, true, ctx);
+                const resVal = await tempState.resolveFunc(pair.value, true, state, tempState);
                 return { node: resVal, resolved: true };
             }
         }
@@ -1145,7 +2032,7 @@ async function handleStrPath(node, pathPart, ctx) {
     // if node is a YAMLSeq, check all the items
     if (node instanceof yaml.YAMLSeq) {
         for (const item of node.items) {
-            const resItem = await ctx.resolveFunc(item, true, true, ctx);
+            const resItem = await tempState.resolveFunc(item, true, state, tempState);
             if (typeof resItem === "string" && resItem === pathPart)
                 return { node: resItem, resolved: true };
         }
@@ -1160,7 +2047,7 @@ async function handleStrPath(node, pathPart, ctx) {
         resolved: false,
     };
 }
-async function handleNumPath(node, pathPart, ctx) {
+async function handleNumPath(node, pathPart, state, tempState) {
     // if parent node is a YAMLMap, check all the keys for this number
     if (node instanceof yaml.YAMLMap) {
         for (const pair of node.items) {
@@ -1170,7 +2057,7 @@ async function handleNumPath(node, pathPart, ctx) {
             else
                 key = pair.key;
             if (key === `${pathPart}`) {
-                const resVal = await ctx.resolveFunc(pair.value, true, true, ctx);
+                const resVal = await tempState.resolveFunc(pair.value, true, state, tempState);
                 return { node: resVal, resolved: true };
             }
         }
@@ -1180,13 +2067,13 @@ async function handleNumPath(node, pathPart, ctx) {
         const length = node.items.length;
         if (pathPart < length) {
             const item = node.items[pathPart];
-            const resItem = await ctx.resolveFunc(item, true, true, ctx);
+            const resItem = await tempState.resolveFunc(item, true, state, tempState);
             return { node: resItem, resolved: true };
         }
     }
     // if node is a scalar, get character at the index directly
     if (node instanceof yaml.Scalar) {
-        const resScalar = await ctx.resolveFunc(node.value, true, true, ctx);
+        const resScalar = await tempState.resolveFunc(node.value, true, state, tempState);
         if (typeof resScalar === "string") {
             const length = node.value.length;
             if (pathPart < length)
@@ -1206,124 +2093,69 @@ async function handleNumPath(node, pathPart, ctx) {
 /**
  * Method to handle 'this' expression. works sync.
  * @param parts - Data parts.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value from resolving the expression.
  */
-async function handleThis(parts, ctx) {
-    // destrcture parts
-    const { nodepath, keyValue: localsVal } = parts;
+async function handleThis(ctx, state, tempState) {
+    var _a, _b;
+    // get needed state
+    const paths = ctx.paths;
+    const args = (_b = (_a = ctx.args) === null || _a === void 0 ? void 0 : _a.argsObj) !== null && _b !== void 0 ? _b : {};
     // get needed cache data
-    const { moduleCache, locals } = ctx;
-    const { AST } = moduleCache;
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return;
     // update local values
-    locals.push(localsVal);
+    tempState.locals.push(args);
     try {
-        return await traverseNodes(AST, nodepath, ctx);
+        const node = await traverseNodes(cache.AST, paths, state, tempState, 1);
+        if (ctx.type) {
+            const verified = verifyNodeType(node, ctx.type.type);
+            if (!verified) {
+                tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${ctx.type.type}`));
+                return null;
+            }
+        }
+        return node;
     }
     finally {
-        locals.pop();
+        tempState.locals.pop();
     }
-}
-
-/**
- * Method to handle 'param' expression.
- * @param parts - Data parts.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
- * @returns Value from resolving the expression.
- */
-function handleParam(parts, ctx) {
-    var _a, _b, _c;
-    // destrcture parts
-    const { alias } = parts;
-    const { moduleCache, options } = ctx;
-    const { directives } = moduleCache;
-    const { paramsMap } = directives;
-    // check if alias is defined in directives using paramsMap, if yes get def param value
-    if (!paramsMap.has(alias)) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Alias used in params expression: '${alias}' is not defined in directives.`));
-        return undefined;
-    }
-    const defParam = paramsMap.get(alias);
-    // if value is passed for this alias use it otherwise use default value
-    return (_c = (_b = (_a = options.params) === null || _a === void 0 ? void 0 : _a[alias]) !== null && _b !== void 0 ? _b : defParam) !== null && _c !== void 0 ? _c : null;
-}
-
-/**
- * Method to handle 'local' expression.
- * @param parts - Data parts.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
- * @returns Value from resolving the expression.
- */
-function handleLocal(parts, ctx) {
-    var _a, _b;
-    // destrcture parts
-    const { alias } = parts;
-    const { moduleCache, locals } = ctx;
-    const { directives } = moduleCache;
-    const { localsMap } = directives;
-    // check if alias is defined in directives using localsMap
-    if (!localsMap.has(alias)) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Alias used in local expression: '${alias}' is not defined in directives.`));
-        return undefined;
-    }
-    let defLocal = localsMap.get(alias);
-    if (defLocal === "{}")
-        defLocal = {};
-    if (defLocal === "[]")
-        defLocal = [];
-    // generate localsVal object from values passed after $this
-    const handledLocalsVal = Object.fromEntries(locals
-        .map((obj) => {
-        return Object.entries(obj);
-    })
-        .flat(1));
-    // if value is passed for this alias use it otherwise use default value
-    return (_b = (_a = handledLocalsVal[alias]) !== null && _a !== void 0 ? _a : defLocal) !== null && _b !== void 0 ? _b : null;
 }
 
 /**
  * Method to handle 'import' expression. works sync.
  * @param parts - Data parts.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value from resolving the expression.
  */
-async function handleImp(parts, ctx) {
-    // destrcture parts
-    const { nodepath: aliasWithPath, keyValue: params } = parts;
-    // get data from context
-    const { moduleCache, options, loadId } = ctx;
-    // get directives object along with resolved path from cache
-    const { directives, resolvedPath } = moduleCache;
-    // get importsMap from directives object
-    const { importsMap } = directives;
-    // get alias and node path from expr path
-    const alias = aliasWithPath[0];
-    const nodepath = aliasWithPath.slice(1);
-    // use imports map to get path and defualt params of this import
-    const impData = importsMap.get(alias);
-    // if no import data return error
-    if (!impData) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Alias used in import expression: '${aliasWithPath}' is not defined in directives.`));
-        return undefined;
-    }
-    const { params: defParamsVal, path: targetPath } = impData;
+async function handleImport(ctx, state, tempState) {
+    var _a, _b;
+    // get needed state
+    const paths = ctx.paths;
+    const args = (_b = (_a = ctx.args) === null || _a === void 0 ? void 0 : _a.argsObj) !== null && _b !== void 0 ? _b : {};
+    // get needed cache data
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return;
+    const imp = getImport(cache.directives.import, paths[1].path, true);
+    if (!imp)
+        return;
     // merge default with defined params
-    const finalParams = { ...defParamsVal, ...params };
+    const finalParams = { ...imp.defaultParams, ...args };
     // import file
-    try {
-        const { parse, errors } = await importMod(resolvedPath, targetPath, finalParams, ctx);
-        // add errors if present
-        ctx.errors.push(...errors);
-        // traverse load using nodepath and return value
-        return await traverseNodes(parse, nodepath, ctx);
+    const parse = await importModule(imp.path, finalParams, state, tempState);
+    // traverse load using nodepath and verify node type if passed
+    const node = await traverseNodes(parse, paths, state, tempState, 2);
+    if (ctx.type) {
+        const verified = verifyNodeType(node, ctx.type.type);
+        if (!verified) {
+            tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${ctx.type.type}.`));
+            return null;
+        }
     }
-    catch (err) {
-        if (err instanceof YAMLError)
-            ctx.errors.push(err);
-        else
-            ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", err));
-        return undefined;
-    }
+    // return node
+    return node;
 }
 /**
  * Method to import another YAML files asynchronously.
@@ -1334,86 +2166,342 @@ async function handleImp(parts, ctx) {
  * @param loadId - Load id generated for this load function execution.
  * @returns Final load of the imported file.
  */
-async function importMod(modulePath, targetPath, targetParams, ctx) {
-    var _a;
-    const { options, loadId, parseFunc } = ctx;
-    // remove file name from module path if present
-    const dirModulePath = removeFileName(modulePath);
-    // resolve path by adding targer path to module path
-    const resolvedPath = handlePath((_a = options === null || options === void 0 ? void 0 : options.basePath) !== null && _a !== void 0 ? _a : process.cwd(), dirModulePath, targetPath, ctx);
-    // if error while resolving path return empty errors and undefined load
-    if (!resolvedPath)
-        return { errors: [], parse: undefined };
+async function importModule(targetPath, targetParams, state, tempState) {
+    // merge paths
+    const { status, value: resolvedPath } = mergePath(targetPath, state, tempState);
+    if (!status)
+        return;
+    // deep clone options and update params
+    const clonedOptions = deepClone(tempState.options);
+    clonedOptions.params = targetParams;
     // load str
-    const parseData = await parseFunc(resolvedPath, {
-        ...options,
-        params: targetParams,
-        filename: undefined, // remove the prev filename
-    }, loadId);
+    const parseData = await tempState.parseFunc(resolvedPath, clonedOptions, state);
+    // push any errors
+    tempState.importedErrors.push(...parseData.errors);
     // return load
-    return parseData;
+    return parseData.parse;
 }
+
 /**
- * Method to handle relative paths by resolving & insuring that they live inside the sandbox and are actual YAML files, also detect circular dependency if present.
- * @param basePath - Base path defined by user in the options (or cwd if was omitted by user) that will contain and sandbox all imports.
- * @param modulePath - Path of the current YAML file.
- * @param targetPath - Path of the imported YAML file.
- * @param loadOpts - Options object passed to load function and updated using imported module's filepath.
- * @param loadId - Unique id that identifies this load.
- * @returns Resolved safe path that will be passed to fs readFile function.
+ * Method to handle 'param' expression.
+ * @param parts - Data parts.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
+ * @returns Value from resolving the expression.
  */
-function handlePath(basePath, modulePath, targetPath, ctx) {
-    const { options, loadId } = ctx;
-    // resolve path
-    const resolvedPath = path.resolve(modulePath, targetPath);
-    // make sure it's inside sandbox
-    const isSandboxed = isInsideSandBox(resolvedPath, basePath);
-    if (!isSandboxed && !options.unsafe)
-        throw new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Path used: ${targetPath} is out of scope of base path: ${basePath}`);
-    const isYaml = isYamlFile(resolvedPath);
-    if (!isYaml)
-        throw new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `You can only load YAML files the loader. loaded file: ${resolvedPath}`);
-    // detect circular dependency if present
-    const circularDep = circularDepClass.addDep(modulePath, resolvedPath, loadId);
-    if (circularDep)
-        throw new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Circular dependency detected: ${circularDep.join(" -> ")}`);
-    // return path
-    return resolvedPath;
+function handleParam(ctx, state, tempState) {
+    var _a, _b, _c, _d, _e;
+    // destrcture parts
+    const alias = ctx.paths[1].path;
+    // get needed cache data
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return;
+    const param = getParam(cache.directives.param, alias, true);
+    const defParam = param === null || param === void 0 ? void 0 : param.defauleValue;
+    // if value is passed for this alias use it otherwise use default value
+    const value = (_e = (_d = (_b = (_a = tempState.options.params) === null || _a === void 0 ? void 0 : _a[alias]) !== null && _b !== void 0 ? _b : (_c = tempState.options.universalParams) === null || _c === void 0 ? void 0 : _c[alias]) !== null && _d !== void 0 ? _d : defParam) !== null && _e !== void 0 ? _e : null;
+    if (param === null || param === void 0 ? void 0 : param.yamlType) {
+        const type = "as " + param.yamlType;
+        const verified = verifyNodeType(value, type);
+        if (!verified) {
+            tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${param.yamlType}`));
+            return null;
+        }
+    }
+    return value;
 }
+
 /**
- * Method to remove file name from path and just keep path until last directory.
- * @param path - Path that will be handled.
- * @returns Path after file name removal.
+ * Method to handle 'local' expression.
+ * @param parts - Data parts.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
+ * @returns Value from resolving the expression.
  */
-function removeFileName(path$1) {
-    return isYamlFile(path$1) ? path.dirname(path$1) : path$1;
+function handleLocal(ctx, state, tempState) {
+    var _a, _b;
+    // destrcture parts
+    const alias = ctx.paths[1].path;
+    // get needed cache data
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return;
+    const local = getLocal(cache.directives.local, alias, true);
+    let defLocal = local === null || local === void 0 ? void 0 : local.defauleValue;
+    // generate localsVal object from values passed after $this
+    const handledLocalsVal = Object.fromEntries(tempState.locals
+        .map((obj) => {
+        return Object.entries(obj);
+    })
+        .flat(1));
+    // if value is passed for this alias use it otherwise use default value
+    const value = (_b = (_a = handledLocalsVal[alias]) !== null && _a !== void 0 ? _a : defLocal) !== null && _b !== void 0 ? _b : null;
+    if (local === null || local === void 0 ? void 0 : local.yamlType) {
+        const type = "as " + local.yamlType;
+        const verified = verifyNodeType(value, type);
+        if (!verified) {
+            tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${local.yamlType}.`));
+            return null;
+        }
+    }
+    return value;
 }
 
 /**
  * Method to resolve interpolations. works sync.
  * @param expr - Expression that will be handled.
- * @param ctx - Unique id generated for this resolve executiion, used to access cache.
+ * @param tempState - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value returned from expression resolve.
  */
-async function handleExpr(expr, ctx) {
-    const exprData = await handleExpression(expr, ctx);
-    if (!exprData) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Invalid type in expression: ${expr} defined types are: 'this' , 'import', 'param' and 'local'`));
-        return expr;
+async function handleScalar(input, scalar, state, tempState) {
+    // tokenize scalar
+    const tokens = tokenizeScalar(input, tempState);
+    // add tokens to cache
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (cache) {
+        if (cache.scalarTokens[input])
+            cache.scalarTokens[input].scalars.push(scalar);
+        else
+            cache.scalarTokens[input] = { scalars: [scalar], tokens };
     }
-    // destructure expression data
-    const { type, parts } = exprData;
-    // handle expression according to base
-    switch (type) {
+    // handle tokens and return them
+    return await handleTextTokens(tokens, state, tempState);
+}
+async function handleTextTokens(tokens, state, tempState) {
+    if (!tokens)
+        return undefined;
+    // get first tokend and check if it's free expression or not
+    const t1 = tokens[0];
+    if (!t1)
+        return undefined;
+    const freeExpr = t1.freeExpr;
+    // if free expression handle expression tokens directly
+    if (freeExpr)
+        return await handleExprTokens(tokens[0], tokens[0].exprTokens, state, tempState);
+    // handle interpolated text
+    let out = "";
+    let i = 0;
+    while (i < tokens.length) {
+        const tok = tokens[i];
+        if (tok.type === TextTokenType.TEXT)
+            out += tok.text;
+        if (tok.type === TextTokenType.EXPR) {
+            const value = await handleExprTokens(tok, tok.exprTokens, state, tempState);
+            const textValue = typeof value === "string" ? value : JSON.stringify(value);
+            out += textValue;
+        }
+        i++;
+    }
+    return out;
+}
+async function handleExprTokens(textToken, tokens, state, tempState) {
+    var _a;
+    if (!tokens)
+        return undefined;
+    // expression state and error definition
+    const ctx = {
+        textToken,
+        paths: [],
+        args: undefined,
+        type: undefined,
+        prevTokenType: undefined,
+        argsDefined: false,
+        typeDefined: false,
+        whiteSpaceDefined: false,
+    };
+    // loop tokens
+    for (const tok of tokens) {
+        // if path token handle it
+        if (tok.type === ExprTokenType.PATH) {
+            // make sure that no two path tokens are repeated
+            if (ctx.prevTokenType === "path")
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Path tokens should be separated by dots."));
+            ctx.prevTokenType = "path";
+            // push path text
+            ctx.paths.push({ path: tok.text, tok });
+        }
+        // if dot token handle it
+        if (tok.type === ExprTokenType.DOT) {
+            // make sure that no two dot tokens are repeated
+            if (ctx.prevTokenType === "dot")
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Path should be present after each dot."));
+            ctx.prevTokenType = "dot";
+        }
+        // if args token handle it
+        if (tok.type === ExprTokenType.ARGS) {
+            // make sure that args token is defined only once
+            if (ctx.argsDefined) {
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Each expression can only contain one arguments parenthesis."));
+                continue;
+            }
+            ctx.argsDefined = true;
+            // handle args
+            const args = await handleArgTokens(tok.argTokens, state, tempState);
+            (_a = ctx.args) !== null && _a !== void 0 ? _a : (ctx.args = { argsObj: {}, tok });
+            for (const [k, v] of Object.entries(args))
+                ctx.args.argsObj[k] = v;
+        }
+        // if type token handle it
+        if (tok.type === ExprTokenType.TYPE) {
+            // make sure that type token is defined only once
+            if (ctx.typeDefined) {
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Each expression can only contain one type definition."));
+                continue;
+            }
+            ctx.typeDefined = true;
+            // set type
+            ctx.type = { type: tok.text.trim(), tok };
+        }
+        // if white space token handle it
+        if (tok.type === ExprTokenType.WHITE_SPACE) ;
+    }
+    // get base (first path) and verify it
+    const baseTok = ctx.paths[0];
+    if (!verifyBase(baseTok.path)) {
+        tempState.errors.push(new YAMLExprError([baseTok.tok.pos.start, baseTok.tok.pos.end], "", "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."));
+        return undefined;
+    }
+    // get alias (second path) and verify it
+    const aliasTok = ctx.paths[1];
+    if (!aliasTok) {
+        tempState.errors.push(new YAMLExprError([baseTok.tok.pos.end, baseTok.tok.pos.end + 1], "", "You have to pass an alias after expression base"));
+        return undefined;
+    }
+    if (!verifyAlias(aliasTok.path, baseTok.path, state, tempState)) {
+        tempState.errors.push(new YAMLExprError([aliasTok.tok.pos.start, aliasTok.tok.pos.end], "", "Alias used is not defined in directives"));
+        return undefined;
+    }
+    // verify arguments if passed
+    if (ctx.args && baseTok.path !== "this" && baseTok.path !== "import") {
+        tempState.errors.push(new YAMLExprError([ctx.args.tok.pos.start, ctx.args.tok.pos.end], "", "Arguments will be ignored, they are used with 'this' or 'import' bases only."));
+    }
+    // verify type if passed
+    if (ctx.type) {
+        if (baseTok.path !== "this" && baseTok.path !== "import")
+            tempState.errors.push(new YAMLExprError([ctx.type.tok.pos.start, ctx.type.tok.pos.end], "", "Type will be ignored, it's used with 'this' or 'import' bases only."));
+        if (!verifyType(ctx.type.type)) {
+            tempState.errors.push(new YAMLExprError([ctx.type.tok.pos.start, ctx.type.tok.pos.end], "", "Invalid type, allowed types are either: 'as scalar', 'as map' or 'as seq'."));
+            ctx.type = undefined;
+        }
+    }
+    // resolve
+    switch (baseTok.path) {
         case "this":
-            return await handleThis(parts, ctx);
+            return handleThis(ctx, state, tempState);
         case "import":
-            return await handleImp(parts, ctx);
+            return handleImport(ctx, state, tempState);
         case "param":
-            return handleParam(parts, ctx);
+            return handleParam(ctx, state, tempState);
         case "local":
-            return handleLocal(parts, ctx);
+            return handleLocal(ctx, state, tempState);
     }
+}
+function verifyBase(base) {
+    switch (base) {
+        case "import":
+            return true;
+        case "this":
+            return true;
+        case "local":
+            return true;
+        case "param":
+            return true;
+        default:
+            return false;
+    }
+}
+function verifyAlias(alias, base, state, tempState) {
+    if (!alias)
+        return false;
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return false;
+    switch (base) {
+        case "import":
+            const imports = getAllImports(cache.directives.import, false);
+            return imports.some((i) => i.alias === alias);
+        case "local":
+            const locals = getAllLocals(cache.directives.local, false);
+            return locals.some((i) => i.alias === alias);
+        case "param":
+            const params = getAllParams(cache.directives.param, false);
+            return params.some((i) => i.alias === alias);
+        case "this":
+            return !!alias;
+    }
+}
+function verifyType(type) {
+    switch (type) {
+        case "as scalar":
+            return true;
+        case "as map":
+            return true;
+        case "as seq":
+            return true;
+        default:
+            return false;
+    }
+}
+async function handleArgTokens(tokens, state, tempState) {
+    if (!tokens)
+        return { args: {}, errors: [] };
+    // var to hold args object
+    let args = {};
+    // loop args tokens
+    let prevTokenType;
+    for (const tok of tokens) {
+        // if comma token handle itt
+        if (tok.type === ArgsTokenType.COMMA) {
+            // make sure that no two comma tokens are repeated
+            if (prevTokenType === "comma")
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Key value pair should be present after each comma."));
+            prevTokenType = "comma";
+        }
+        // if key value pair token handle it
+        if (tok.type === ArgsTokenType.KEY_VALUE) {
+            // make sure that no two key value tokens are repeated (should never happen)
+            if (prevTokenType === "keyValue")
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Key value pairs should be separeted by comma."));
+            // resolve key value token
+            const { key, value } = await handleKeyValueTokens(tok.keyValueToks, state, tempState);
+            // add key value pair or push error if no key was present
+            if (!key) {
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Messing key from key value pair."));
+                continue;
+            }
+            args[key] = value;
+        }
+    }
+    return args;
+}
+async function handleKeyValueTokens(tokens, state, tempState) {
+    if (!tokens)
+        return { key: undefined, value: undefined };
+    // key value parts
+    let key;
+    let value;
+    // loop tokens
+    let prevTokenType;
+    for (const tok of tokens) {
+        // if key token handle it
+        if (tok.type === KeyValueTokenType.KEY) {
+            // make sure that no two key tokens are repeated
+            if (prevTokenType === "key")
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Only one key can be used in key=value pair."));
+            // handle key
+            prevTokenType = "key";
+            key = tok.text;
+        }
+        // if value token handle it
+        if (tok.type === KeyValueTokenType.VALUE) {
+            // make sure that no two value tokens are repeated
+            if (prevTokenType === "value")
+                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Only one value can be used in key=value pair."));
+            // handle value
+            prevTokenType = "value";
+            value = await handleTextTokens(tok.valueToks, state, tempState);
+        }
+    }
+    return { key, value };
 }
 
 /**
@@ -1422,32 +2510,18 @@ async function handleExpr(expr, ctx) {
  * @param opts - Options passed with this load function execution.
  * @returns Final load after resolving the blueprint, what is returned to the user after load functions finishes.
  */
-async function resolve(loadId, errors, moduleCache, opts, parseFunc) {
-    // generate id specific for this load
-    const resolveId = generateId();
-    // create anchors map and locals array
-    const anchors = new Map();
-    const locals = [];
-    // create context for this resolve
-    const ctx = {
-        options: opts,
-        loadId,
-        resolveId,
-        moduleCache,
-        errors,
-        anchors,
-        locals,
-        range: [0, 0],
-        resolveFunc: resolveUnknown,
-        parseFunc,
-    };
+async function resolve(state, tempState) {
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return { parse: undefined, privateParse: undefined }; // should never execute
     // resolve
-    const privateParse = await resolveUnknown(moduleCache.AST, false, true, ctx);
-    // remove private nodes
-    const clonedLoad = deepClone(privateParse);
-    const parse = filterPrivate(clonedLoad, ctx);
+    const parse = await resolveUnknown(cache.AST, false, state, tempState);
+    // remove private nodes if set to do so only
+    const ignorePrivate = tempState.options.ignorePrivate && state.depth === 1;
+    if (!ignorePrivate)
+        filterPrivate(parse, tempState, cache);
     //  and return value
-    return { parse, privateParse, errors: ctx.errors };
+    return parse;
 }
 /**
  * Method to resolve unkown value types by checking type and using appropriate specific resolver function. it's also the place where blueprintInstance is resolved. works sync.
@@ -1457,44 +2531,35 @@ async function resolve(loadId, errors, moduleCache, opts, parseFunc) {
  * @param ctx - Context object that holds data about this resolve.
  * @returns Value of the specific resolve function based on type.
  */
-async function resolveUnknown(item, anchored, allowExpr, ctx) {
+async function resolveUnknown(item, anchored, state, tempState) {
     if (item instanceof yaml.Alias)
-        return resolveAlias(item, ctx);
+        return resolveAlias(item, tempState);
     if (item instanceof yaml.YAMLSeq)
-        return await resolveSeq(item, anchored, ctx);
+        return await resolveSeq(item, anchored, state, tempState);
     if (item instanceof yaml.YAMLMap)
-        return await resolveMap(item, anchored, ctx);
+        return await resolveMap(item, anchored, state, tempState);
     if (item instanceof yaml.Scalar)
-        return await resolveScalar(item, anchored, allowExpr, ctx);
-    if (typeof item === "string")
-        return await resolveString(item, ctx);
+        return await resolveScalar(item, anchored, state, tempState);
     return item;
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Helper methods.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-async function resolveString(str, ctx) {
-    let out = str;
-    const { isExpr, expr } = isStringExpr(str);
-    if (isExpr)
-        out = await handleExpr(expr, ctx);
-    return out;
-}
-function resolveAlias(alias, ctx) {
+function resolveAlias(alias, tempState) {
     // update range
     if (alias.range)
-        ctx.range = [alias.range[0], alias.range[1]];
+        tempState.range = [alias.range[0], alias.range[1]];
     else
-        ctx.range = undefined;
+        tempState.range = [0, 99999];
     // var to hold out value
     let out;
     // check if it's saved in aliases
-    const present = ctx.anchors.has(alias.source);
+    const present = tempState.anchors.has(alias.source);
     // resolve anchor
     if (present)
-        out = ctx.anchors.get(alias.source);
+        out = tempState.anchors.get(alias.source);
     else
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", "No anchor is defined yet for this alias."));
     alias.resolvedValue = out;
     return out;
 }
@@ -1504,34 +2569,27 @@ function resolveAlias(alias, ctx) {
  * @param id - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value of the resolved string (scalar in YAML).
  */
-async function resolveScalar(scalar, anchored, allowExpr, ctx) {
+async function resolveScalar(scalar, anchored, state, tempState) {
     // update range
     if (scalar.range)
-        ctx.range = [scalar.range[0], scalar.range[1]];
+        tempState.range = [scalar.range[0], scalar.range[1]];
     else
-        ctx.range = undefined;
-    // var to hold out value
-    let out;
-    // Detect circular dep
+        tempState.range = [0, 99999];
+    // Detect circular dependency
     if (anchored && !scalar.resolved) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
         return undefined;
     }
     // Handle value
-    const { isExpr, expr } = isScalarExpr(scalar);
-    if (isExpr && allowExpr) {
-        out = await handleExpr(expr, ctx);
-        if (out && typeof out === "object")
-            out = JSON.stringify(out);
-    }
-    else
-        out = await handleString(scalar.value, ctx);
+    if (typeof scalar.value !== "string")
+        return scalar.value;
+    let out = await handleScalar(scalar.value, scalar, state, tempState);
     // handle tag if present
     if (scalar.tag)
-        out = await resolveTag(scalar.value, scalar.tag, ctx);
+        out = await resolveTag(scalar.value, scalar.tag, tempState);
     // handle anchor if present
     if (scalar.anchor)
-        ctx.anchors.set(scalar.anchor, out);
+        tempState.anchors.set(scalar.anchor, out);
     // mark it as resolved, save resolved value return it
     scalar.resolved = true;
     scalar.resolvedValue = out;
@@ -1545,102 +2603,70 @@ async function resolveScalar(scalar, anchored, allowExpr, ctx) {
  * @param path - Optional and needed only if anchored is tree. so error message will contain path of the node in the tree.
  * @returns Value of the resolved object (mapping in YAML).
  */
-async function resolveMap(map, anchored, ctx) {
+async function resolveMap(map, anchored, state, tempState) {
     // update range
     if (map.range)
-        ctx.range = [map.range[0], map.range[1]];
+        tempState.range = [map.range[0], map.range[1]];
     else
-        ctx.range = undefined;
+        tempState.range = [0, 99999];
     // var to hold out value
-    let out;
     if (anchored && !map.resolved) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
         return undefined;
     }
-    const { isExpr, expr, scalar } = isMapExpr(map);
-    if (isExpr) {
-        const val = await handleExpr(expr, ctx);
-        if (val && typeof val === "object" && !Array.isArray(val))
-            out = val;
-        else {
-            ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Expression: ${expr} is wrapped inside {} but it's value is not a mapping.`));
-            out = undefined;
-        }
-        scalar.resolvedValue = out;
+    // handle value
+    let res = {};
+    for (const pair of map.items) {
+        let hKey = await resolveUnknown(pair.key, anchored, state, tempState);
+        let hVal = await resolveUnknown(pair.value, anchored, state, tempState);
+        res[stringify(hKey, true)] = hVal;
     }
-    else {
-        const res = {};
-        for (const pair of map.items) {
-            let hKey = await resolveUnknown(pair.key, anchored, false, ctx);
-            let hVal = await resolveUnknown(pair.value, anchored, true, ctx);
-            if (typeof hKey === "string")
-                res[hKey] = hVal;
-            else
-                res[JSON.stringify(hKey)] = hVal;
-        }
-        out = res;
-    }
+    let out = res; // just to avoid ts errors
     if (map.tag)
-        out = await resolveTag(out, map.tag, ctx);
+        out = await resolveTag(out, map.tag, tempState);
     if (map.anchor)
-        ctx.anchors.set(map.anchor, out);
+        tempState.anchors.set(map.anchor, out);
     map.resolved = true;
     map.resolvedValue = out;
     return out;
 }
-async function resolveSeq(seq, anchored, ctx) {
+async function resolveSeq(seq, anchored, state, tempState) {
     // update range
     if (seq.range)
-        ctx.range = [seq.range[0], seq.range[1]];
+        tempState.range = [seq.range[0], seq.range[1]];
     else
-        ctx.range = undefined;
-    // var to hold out value
-    let out;
+        tempState.range = [0, 99999];
+    // check resolve status
     if (anchored && !seq.resolved) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
         return undefined;
     }
-    const { isExpr, expr, scalar } = isSeqExpr(seq);
-    if (isExpr) {
-        const val = await handleExpr(expr, ctx);
-        if (Array.isArray(val))
-            out = val;
-        else {
-            ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `Expression: ${expr} is wrapped inside [] but it's value is not a sequence.`));
-            out = undefined;
-        }
-        scalar.resolvedValue = out;
-    }
-    else {
-        let res = [];
-        for (const item of seq.items) {
-            const val = await resolveUnknown(item, anchored, true, ctx);
-            res.push(val);
-        }
-        out = res;
-    }
+    let res = [];
+    for (const item of seq.items)
+        res.push(await resolveUnknown(item, anchored, state, tempState));
+    let out = res; // just to avoid ts errors
     if (seq.tag)
-        out = await resolveTag(out, seq.tag, ctx);
+        out = await resolveTag(out, seq.tag, tempState);
     if (seq.anchor)
-        ctx.anchors.set(seq.anchor, out);
+        tempState.anchors.set(seq.anchor, out);
     seq.resolved = true;
     seq.resolvedValue = out;
     return out;
 }
-async function resolveTag(data, tag, ctx) {
+async function resolveTag(data, tag, tempState) {
     // get tag from schema
-    const { options } = ctx;
+    const { options } = tempState;
     if (options.ignoreTags)
         return data;
     if (!(options.schema instanceof yaml.Schema)) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", "No schema is defined to handle tags."));
         return data;
     }
     const tags = options.schema.tags;
     // get matching tag from tags
     const matchTag = tags.find((t) => t.tag === tag);
     if (!matchTag || !matchTag.resolve) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", "This tag is not found in the schema."));
         return data;
     }
     // execute tag's resolve
@@ -1648,55 +2674,14 @@ async function resolveTag(data, tag, ctx) {
         const resTag = matchTag.resolve(
         // @ts-ignore
         data, (err) => {
-            ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+            tempState.errors.push(new YAMLExprError(tempState.range, "", `Error while resolving tag: ${err}.`));
         }, options);
         return resTag;
     }
     catch (err) {
-        ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", ""));
+        tempState.errors.push(new YAMLExprError(tempState.range, "", `Unkown error while resolving tag: ${err}.`));
         return data;
     }
-}
-async function handleString(str, ctx) {
-    // if type is not string (e.g. number) return directly
-    if (typeof str !== "string")
-        return str;
-    /** Var to hold out string. */
-    let out = "";
-    /** Var to hold loop index. */
-    let i = 0;
-    // start loop
-    while (i < str.length) {
-        // get character
-        const ch = str[i];
-        // if charachter is $ handle it
-        if (ch === "$") {
-            // escaped -> $${}
-            if (str[i + 1] === "$" && str[i + 2] === "{") {
-                out += "${"; // ad only one "$" to the out string
-                i += 3; // skip the reset of the expression
-                continue;
-            }
-            // non escaped -> ${}
-            if (str[i + 1] === "{") {
-                const end = getClosingChar(str, "{", "}", i + 2);
-                if (end === -1) {
-                    ctx.errors.push(new YAMLExprError(ctx.range ? [...ctx.range] : [0, 99999], "", `String interpolation used without closing '}' in: ${str}`));
-                    return undefined;
-                }
-                let val = await handleExpr(str.slice(i, end + 1), ctx);
-                if (typeof val !== "string")
-                    val = JSON.stringify(val);
-                out += val;
-                i = end + 1;
-                continue;
-            }
-        }
-        // any other char just add it and increment index
-        out += ch;
-        i++;
-    }
-    return out;
 }
 /**
  * Method to filter private nodes from final load.
@@ -1704,23 +2689,28 @@ async function handleString(str, ctx) {
  * @param id - Unique id generated for this resolve executiion, used to access cache.
  * @returns Final value after removal or private items.
  */
-function filterPrivate(resolve, ctx) {
+function filterPrivate(parse, tempState, cache) {
     // get private array
-    const privateArr = ctx.moduleCache.directives.privateArr;
+    const privateObj = getPrivate(cache.directives.private, true);
     // loop through private array to handle each path
-    for (const priv of privateArr) {
-        // get parts of the path
-        const path = divideNodepath(priv, ctx.range ? ctx.range : [0, 99999]);
+    for (const [pathStr, { pathParts, token, dirToken }] of Object.entries(privateObj)) {
         // var that holds the resolve to transverse through it
-        let node = resolve;
-        for (let i = 0; i < path.length; i++) {
+        let node = parse;
+        for (let i = 0; i < pathParts.length; i++) {
             // get current part of the path
-            const p = path[i];
-            // if it's not a record then path is not true and just console a warning
-            if (!isRecord(node))
+            const p = pathParts[i];
+            // if it's not a record then path is not true
+            if (!isRecord(node)) {
+                // create error
+                const error = new YAMLExprError([token.pos.start, token.pos.end], "", `Path: ${pathStr} is not present in target YAML tree.`);
+                // push error into directive token, directives object and overall errors
+                dirToken.errors.push(error);
+                cache.directives.errors.push(error);
+                tempState.errors.push(error);
                 break;
+            }
             // in last iteraion delete the child based on the parent type
-            if (path.length - 1 === i) {
+            if (pathParts.length - 1 === i) {
                 if (p in node) {
                     if (Array.isArray(node))
                         node.splice(Number(p), 1);
@@ -1749,322 +2739,206 @@ function filterPrivate(resolve, ctx) {
             }
         }
     }
-    return resolve;
+}
+
+/**
+ * Class to handle circular dependency checks.
+ */
+class CircularDepHandler {
+    constructor() {
+        /** adjacency list: node -> set of dependencies (edges node -> dep) */
+        this._graphs = new Map();
+    }
+    /**
+     * Method to handle checking of the circular dependency.
+     * @param modulePath - Path of the current module.
+     * @param targetPath - Path of the imported module.
+     * @returns - null if no circular dependency is present or array of paths or the circular dependency.
+     */
+    addDep(modulePath, targetPath) {
+        // ensure nodes exist
+        if (!this._graphs.has(modulePath))
+            this._graphs.set(modulePath, new Set());
+        // root/initial load — nothing to check
+        if (!targetPath)
+            return null;
+        if (!this._graphs.has(targetPath))
+            this._graphs.set(targetPath, new Set());
+        // add the edge modulePath -> targetPath
+        this._graphs.get(modulePath).add(targetPath);
+        // Now check if there's a path from targetPath back to modulePath.
+        // If so, we constructed a cycle.
+        const path = this._findPath(targetPath, modulePath, this._graphs);
+        if (path) {
+            // path is [targetPath, ..., modulePath]
+            // cycle: [modulePath, targetPath, ..., modulePath]
+            return [modulePath, ...path];
+        }
+        return null;
+    }
+    /**
+     * Method to delete dependency node (path of a module) from graph.
+     * @param modulePath - Path that will be deleted.
+     */
+    deleteDep(modulePath) {
+        // remove outgoing edges (delete node key)
+        if (this._graphs.has(modulePath))
+            this._graphs.delete(modulePath);
+        // remove incoming edges from other nodes
+        for (const [k, deps] of this._graphs.entries()) {
+            deps.delete(modulePath);
+        }
+    }
+    /** Method to find path of circular dependency. */
+    _findPath(start, target, graph) {
+        const visited = new Set();
+        const path = [];
+        const dfs = (node) => {
+            if (visited.has(node))
+                return false;
+            visited.add(node);
+            path.push(node);
+            if (node === target)
+                return true;
+            const neighbors = graph.get(node);
+            if (neighbors) {
+                for (const n of neighbors) {
+                    if (dfs(n))
+                        return true;
+                }
+            }
+            path.pop();
+            return false;
+        };
+        return dfs(start) ? [...path] : null;
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Main load functions.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-async function parseExtend(filepath, options) {
-    // set new loadId
-    const loadId = generateId();
-    // set array that will hold errors
-    const errors = [];
+/**
+ *
+ * @param filepath - Path of YAML file in filesystem.
+ * @param options - Options object passed to control parser behavior.
+ * @param state - For internal use don't pass any thing here.
+ * @returns Object that hold parse value along with errors thrown in this YAML file and errors thrown in imported YAML files.
+ */
+async function parseExtend(filepath, options = {}, state) {
+    // init state and temp state
+    const s = initState(state);
+    const ts = initTempState(filepath, options);
     try {
-        // handle options
-        const handledOpts = handleOpts(options);
-        // resolve path
-        const resolvedPath = resolvePath(filepath, handledOpts.basePath);
-        // read file
-        const src = await readFile(resolvedPath, handledOpts.basePath, handledOpts);
-        // get cache of the module
-        let moduleCache = getModuleCache(handledOpts.filename, src);
-        // if cache of the module is not present, get directives and AST from src directly to create module cache, also save pureLoad and privatePureLoad
-        if (!moduleCache) {
-            const directives = handleDir(src);
-            const parsedDoc = yaml.parseDocument(src, handledOpts);
-            const AST = parsedDoc.contents;
-            const pureParseErrors = [];
-            moduleCache = addModuleCache(loadId, resolvedPath, src, AST, directives);
-            const { parse, privateParse } = await resolve(loadId, pureParseErrors, moduleCache, {
-                ...handledOpts,
-                params: undefined,
-            }, internalParseExtend);
-            addResolveCache(resolvedPath, undefined, parse, privateParse, [
-                ...pureParseErrors,
-                ...directives.errors,
-            ]);
-        }
-        // check if load with params is present in the cache and return it if present
-        const cachedResolve = getResolveCache(resolvedPath, handledOpts.params);
-        if (cachedResolve !== undefined) {
-            const privateReturn = handlePrivateLoad(cachedResolve.load, cachedResolve.privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
-            return { parse: privateReturn, errors: cachedResolve.errors };
-        }
-        // overwrite filename if defined in directives
-        if (moduleCache.directives.filename)
-            handledOpts.filename = moduleCache.directives.filename;
+        // increment depth
+        s.depth++;
+        // verify path
+        if (!verifyPath(ts.resolvedPath, ts))
+            return {
+                parse: undefined,
+                errors: ts.errors,
+                importedErrors: ts.importedErrors,
+            };
+        // read file and add source and lineStarts to tempState
+        ts.source = await promises.readFile(ts.resolvedPath, { encoding: "utf8" });
+        ts.lineStarts = getLineStarts(ts.source);
+        // get module cache
+        await handleModuleCache(s, ts);
+        // check if load with same passed params is present in the cache and return it if present
+        const cachedParse = getParseEntery(s, ts.resolvedPath, ts.options.params);
+        if (cachedParse !== undefined)
+            return cachedParse;
         // load imports before preceeding in resolving this module
-        for (const imp of moduleCache.directives.importsMap.values()) {
-            const params = imp.params;
-            const path = imp.path;
-            await internalParseExtend(path, { ...handledOpts, params }, loadId);
-        }
+        await handleImports(s, ts);
         // resolve AST
-        const { parse, privateParse } = await resolve(loadId, errors, moduleCache, handledOpts, internalParseExtend);
-        // Var to hold both resolve errors and directive errors
-        const comErrors = [...errors, ...moduleCache.directives.errors];
-        // add load to the cache
-        addResolveCache(resolvedPath, handledOpts.params, parse, privateParse, comErrors);
-        // handle private nodes and return
-        const privateReturn = handlePrivateLoad(parse, privateParse, handledOpts.filename, handledOpts.ignorePrivate);
-        return { parse: privateReturn, errors: comErrors };
+        const resolved = await resolve(s, ts);
+        // add filename, path and extendLinePos for this file's errors and update message by adding filename and path to it
+        for (const e of ts.errors) {
+            e.filename = ts.filename;
+            e.path = ts.resolvedPath;
+            e.extendLinePos = getLinePosFromRange(ts.source, ts.lineStarts, e.pos);
+            e.message =
+                e.message +
+                    ` This error occured in file: ${e.filename ? e.filename : "Not defined"}, at path: ${e.path}`;
+        }
+        // generate parseEntery for this file
+        const parseEntery = {
+            parse: resolved,
+            errors: ts.errors,
+            importedErrors: ts.importedErrors,
+        };
+        // add parse entery to the cache
+        setParseEntery(s, ts, parseEntery);
+        return parseEntery;
     }
     finally {
-        deleteLoadId(loadId);
+        s.depth--;
     }
 }
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Methods used by helper classes
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/**
- * Just like load function but used in the code inside live loader and resolve handler. they execute the YAML string the same way load does but they don't create
- * new load id or handle clean-up and input validation. works sync.
- * @param filepath - YAML string or url path for YAML file.
- * @param options - Options object passed to load function.
- * @param loadId - Load id of the load function or live loader that called it.
- * @returnsL Loaded YAML string into js object.
- */
-async function internalParseExtend(filepath, options, loadId) {
-    // set array that will hold errors
-    const errors = [];
-    // handle options
-    const handledOpts = handleOpts(options);
-    // resolve path
-    const resolvedPath = resolvePath(filepath, handledOpts.basePath);
-    // read file
-    const src = await readFile(resolvedPath, handledOpts.basePath, handledOpts);
-    // get cache of the module
-    let moduleCache = getModuleCache(handledOpts.filename, src);
-    // if cache of the module is not present, get directives and AST from src directly to create module cache, also save pureLoad and privatePureLoad
-    if (!moduleCache) {
-        const directives = handleDir(src);
-        const AST = yaml.parse(src, handledOpts);
-        const pureParseErrors = [];
-        moduleCache = addModuleCache(loadId, resolvedPath, src, AST, directives);
-        const { parse, privateParse } = await resolve(loadId, pureParseErrors, moduleCache, {
-            ...handledOpts,
-            params: undefined,
-        }, internalParseExtend);
-        addResolveCache(resolvedPath, undefined, parse, privateParse, [
-            ...pureParseErrors,
-            ...directives.errors,
-        ]);
-    }
-    // check if load with params is present in the cache and return it if present
-    const cachedResolve = getResolveCache(resolvedPath, handledOpts.params);
-    if (cachedResolve !== undefined) {
-        const privateReturn = handlePrivateLoad(cachedResolve.load, cachedResolve.privateLoad, handledOpts.filename, handledOpts.ignorePrivate);
-        return { parse: privateReturn, errors: cachedResolve.errors };
-    }
-    // overwrite filename if defined in directives
-    if (moduleCache.directives.filename)
-        handledOpts.filename = moduleCache.directives.filename;
-    // load imports before preceeding in resolving this module
-    for (const imp of moduleCache.directives.importsMap.values()) {
-        const params = imp.params;
-        const path = imp.path;
-        await internalParseExtend(path, { ...handledOpts, params }, loadId);
-    }
-    // resolve AST
-    const { parse, privateParse } = await resolve(loadId, errors, moduleCache, handledOpts, internalParseExtend);
-    // Var to hold both resolve errors and directive errors
-    const comErrors = [...errors, ...moduleCache.directives.errors];
-    // add load to the cache
-    addResolveCache(resolvedPath, handledOpts.params, parse, privateParse, comErrors);
-    // handle private nodes and return
-    const privateReturn = handlePrivateLoad(parse, privateParse, handledOpts.filename, handledOpts.ignorePrivate);
-    return { parse: privateReturn, errors: comErrors };
-}
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////
 // Helper methdos
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /**
- * Method to handle options by adding default needed values (basePath) if they weren't passed by user.
- * @param opts - Load options object.
- * @returns Options object with needed values.
+ * Function to initialize parser state.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @returns State object that holds data and cache needed to be presisted along parses of different YAML files.
  */
-function handleOpts(opts) {
-    var _a, _b;
-    const basePath = (opts === null || opts === void 0 ? void 0 : opts.basePath)
-        ? path.resolve(process.cwd(), opts.basePath)
-        : process.cwd();
-    const params = (_a = opts === null || opts === void 0 ? void 0 : opts.params) !== null && _a !== void 0 ? _a : {};
-    const ignorePrivate = (opts === null || opts === void 0 ? void 0 : opts.ignorePrivate)
-        ? opts.ignorePrivate === "current"
-            ? [(_b = opts.filename) !== null && _b !== void 0 ? _b : ""]
-            : opts.ignorePrivate
-        : [];
+function initState(state) {
+    if (state)
+        return state;
     return {
-        ...opts,
-        basePath,
-        params,
-        ignorePrivate,
+        cache: new Map(),
+        parsedPaths: new Set(),
+        circularDep: new CircularDepHandler(),
+        depth: 0,
     };
 }
-function deleteLoadId(loadId) {
-    deleteLoadIdFromCache(loadId);
-    circularDepClass.deleteLoadId(loadId);
-}
-
 /**
- * Class that handles loading multiple YAML files at the same time while watching loaded files and update there loads as files change.
+ * Function to initialize temporary parser state.
+ * @param filepath - Path of YAML file in filesystem.
+ * @param options - Options object passed to control parser behavior.
+ * @returns Temporary state object that holds data needed for parsing this YAML file only.
  */
-class LiveLoader {
-    /**
-     * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
-     * per module options here.
-     */
-    constructor(opts) {
-        /** @internal - implementation detail, not part of public API */
-        /** Random id generated for live loader and used as loadId in load function. */
-        this._loadId = generateId();
-        /** @internal - implementation detail, not part of public API */
-        /** Options of the live loading. */
-        this._opts = { basePath: process.cwd() };
-        if (opts)
-            this.setOptions(opts);
-    }
-    /**
-     * Method to set options of the class.
-     * @param opts - Options object passed to control live loader behavior. Note that these options will be default for all load functions, so it's not advised to define "filename" and
-     * per module options here.
-     */
-    setOptions(opts) {
-        this._opts = { ...this._opts, ...opts };
-        if (!this._opts.basePath)
-            this._opts.basePath = process.cwd();
-    }
-    /**
-     * Method to add new module to the live loader. added modules will be watched using fs.watch() and updated as the watched file changes. note that
-     * imported YAML files in the read YAML string are watched as well. works sync so all file watch, reads are sync and tags executions are handled
-     * as sync functions and will not be awaited.
-     * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param opts - Options object passed to control live loader behavior. overwrites default options defined for loader.
-     * @returns Value of loaded YAML file.
-     */
-    async addModule(filepath, options) {
-        // get resolved path
-        const resolvedPath = resolvePath(filepath, this._opts.basePath);
-        // parse str
-        const parse = await internalParseExtend(resolvedPath, { ...options, ...this._opts }, this._loadId);
-        // return load
-        return parse;
-    }
-    /**
-     * Method to get cached value of loaded module or file. note that value retuned is module's resolve when params is undefined (default params value are used).
-     * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for this module.
-     * @returns Cached value of YAML file with default modules params or undefined if file is not loaded.
-     */
-    getModule(filepath, ignorePrivate) {
-        var _a;
-        // get resolved path
-        const resolvedPath = resolvePath(filepath, this._opts.basePath);
-        // get filename
-        const cache = getModuleCache(resolvedPath);
-        const filename = (_a = cache === null || cache === void 0 ? void 0 : cache.directives) === null || _a === void 0 ? void 0 : _a.filename;
-        // get cached loads
-        const cachedLoads = getResolveCache(resolvedPath, undefined);
-        if (!cachedLoads)
-            return undefined;
-        // if ignorePrivate is defined, handle return load based on it
-        if (ignorePrivate !== undefined) {
-            const finalParse = ignorePrivate
-                ? cachedLoads.privateLoad
-                : cachedLoads.errors;
-            return { parse: finalParse, errors: cachedLoads.errors };
-        }
-        // Execute privateLoad to define which load to return
-        const privateParse = handlePrivateLoad(cachedLoads.load, cachedLoads.privateLoad, filename, this._opts.ignorePrivate);
-        return { parse: privateParse, errors: cachedLoads.errors };
-    }
-    /**
-     * Method to get cached value of all loaded modules or files. note that values retuned are module's resolve when params is undefined (default params value are used).
-     * @param ignorePrivate - Boolean to indicate if private nodes should be ignored in the cached load. overwrites value defined in "LiveLoaderOptions.ignorePrivate" for all modules.
-     * @returns Object with keys resolved paths of loaded YAML files and values cached values of YAML files with default modules params.
-     */
-    getAllModules(ignorePrivate) {
-        // check cache using loadId to get paths utilized by the live loader
-        const paths = loadIdsToModules.get(this._loadId);
-        if (!paths)
-            return {};
-        let modules = {};
-        for (const p of paths)
-            modules[p] = this.getModule(p, ignorePrivate);
-        return modules;
-    }
-    /**
-     * Method to get all cached data about specific module. note that they are passed by reference and should never be mutated.
-     * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     * @returns Module load cache object.
-     */
-    getCache(path) {
-        // get resolved path
-        const resolvedPath = resolvePath(path, this._opts.basePath);
-        return getModuleCache(resolvedPath);
-    }
-    /**
-     * Method to get all cached data of all loaded module. note that they are passed by reference and should never be mutated.
-     * @returns Object with keys resolved paths of loaded YAML files and values Module cache objects for these module.
-     */
-    getAllCache() {
-        // check cache using loadId to get paths utilized by the live loader
-        const paths = loadIdsToModules.get(this._loadId);
-        if (!paths)
-            return {};
-        let caches = {};
-        for (const p of paths)
-            caches[p] = this.getCache(p);
-        return caches;
-    }
-    /**
-     * Method to delete module or file from live loader.
-     * @param path - Filesystem path of YAML file. it will be resolved using `LiveLoaderOptions.basePath`.
-     */
-    deleteModule(path) {
-        // get resolved path
-        const resolvedPath = resolvePath(path, this._opts.basePath);
-        // delete module's cache
-        deleteModuleCache(this._loadId, resolvedPath);
-        // delete circular dep
-        circularDepClass.deleteDep(resolvedPath, this._loadId);
-    }
-    /**
-     * Method to clear cache of live loader by deleting all modules or files from live loader.
-     */
-    deleteAllModules() {
-        // check cache using loadId to get paths utilized by the live loader
-        const paths = loadIdsToModules.get(this._loadId);
-        if (!paths)
-            return;
-        // if paths delete all of them
-        for (const p of paths)
-            this.deleteModule(p);
-    }
-    /**
-     * Method to clear live loader along with all of its watchers and cache from memory.
-     */
-    destroy() {
-        // delete all modules
-        this.deleteAllModules();
-        // delete loadId
-        deleteLoadId(this._loadId);
+function initTempState(filepath, options) {
+    var _a;
+    const basePath = (_a = options === null || options === void 0 ? void 0 : options.basePath) !== null && _a !== void 0 ? _a : process.cwd();
+    return {
+        source: "",
+        lineStarts: [],
+        options: {
+            ...options,
+            basePath: path.resolve(basePath),
+        },
+        errors: [],
+        importedErrors: [],
+        resolvedPath: path.resolve(basePath, filepath),
+        filename: "",
+        range: [0, 0],
+        anchors: new Map(),
+        locals: [],
+        resolveFunc: resolveUnknown,
+        parseFunc: parseExtend,
+    };
+}
+/**
+ * Function to handle importing YAML files defined in directives.
+ * @param state - State object that holds data and cache needed to be presisted along parses of different YAML files.
+ * @param tempState - Temporary state object that holds data needed for parsing this YAML file only.
+ */
+async function handleImports(state, tempState) {
+    const cache = state.cache.get(tempState.resolvedPath);
+    if (!cache)
+        return; // should never fire
+    const imports = getAllImports(cache.directives.import, true);
+    for (const i of imports) {
+        const params = i.defaultParams;
+        const path = i.path;
+        if (!path)
+            continue;
+        const copyOptions = deepClone(tempState.options);
+        await parseExtend(path, { ...copyOptions, params }, state);
     }
 }
 
-Object.defineProperty(exports, "YAMLParseError", {
-    enumerable: true,
-    get: function () { return yaml.YAMLParseError; }
-});
-Object.defineProperty(exports, "YAMLWarning", {
-    enumerable: true,
-    get: function () { return yaml.YAMLWarning; }
-});
-exports.LiveLoader = LiveLoader;
-exports.YAMLError = YAMLError;
 exports.YAMLExprError = YAMLExprError;
-exports.hashParams = hashParams;
 exports.parseExtend = parseExtend;
 Object.keys(yaml).forEach(function (k) {
     if (k !== 'default' && !Object.prototype.hasOwnProperty.call(exports, k)) Object.defineProperty(exports, k, {

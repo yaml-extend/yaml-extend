@@ -1,17 +1,23 @@
-# %IMPORT gg "./test2.yaml"
-# %PRIVATE node
-%FILENAME file1
-%IMPORT alias "./test2.yaml"
-%LOCAL local {}
+%FILENAME test
+%LOCAL name scalar ziad
+%IMPORT test2 "./test2.yaml" data={"node":"value"}
+%PRIVATE data
 ---
-node:
-  nested Node:
-    nestedNested.Node: value
-b: { $local.local }
-k: [1, 2, "ff"]
-kk:
-  - 2
-  - 3
-  - { $local.local }
-a: [$this.kk local="$this.b local=$this.node"]
-ff: $import."alias".node99
+nameFac: $local.name
+
+data:
+  feild1: value1
+  feild2: value2
+
+person1:
+  name: $this.nameFac(name=ahmed) as scalar
+  test2: $import.test2.node(
+    work = hero,
+    data = $this.data
+    )
+
+errorNode: $this.person2
+
+person2:
+  name: $this.nameFac
+  nameInText: My name is ${this.nameFac(name=bahaa) as scalar} Taha

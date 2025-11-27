@@ -222,7 +222,7 @@ async function handleExprTokens(
       new YAMLExprError(
         baseTok.tok.pos,
         "",
-        "You have to pass an alias after expression base"
+        "You have to pass an alias after expression base."
       )
     );
     return undefined;
@@ -232,7 +232,7 @@ async function handleExprTokens(
       new YAMLExprError(
         aliasTok.tok.pos,
         "",
-        "Alias used is not defined in directives"
+        `Alias used: ${aliasTok.path} is not defined in directives.`
       )
     );
     return undefined;

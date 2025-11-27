@@ -1,7 +1,11 @@
-%FILENAME "Some name"
-%PARAM work scalar whore
-%PARAM data map
+%PARAM kk kkboy
+%PRIVATE k
 ---
-node:
-  work: $param.work
-  data: $param.data
+data:
+  node1: gg
+  node2:
+    - { name: ziad }
+    - ziad
+  node with sapce: value
+
+k: $param.kk

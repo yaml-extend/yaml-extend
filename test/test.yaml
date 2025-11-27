@@ -1,21 +1,19 @@
-%FILENAME test
-%LOCAL name scalar ziad
-%IMPORT test2 "./test2.yaml" data={"node":"value"}
-%PRIVATE data
+%FILENAME test1
+# %IMPORT dd ./test2.yml
+%LOCAL gg ggboy
+%LOCAL mm mmboy
+%PARAM ll llboy
+%PRIVATE node111.node7
 ---
-nameFac: $local.name
+# node: value
 
-data:
-  feild1: value1 $import() as ff ${this.nameFac}
-  feild2: value2
-person1:
-  name: $this.nameFac(name=ahmed) as scalar
-  test2: $import.test2.node(
-    work = hero,
-    data = $this.data
-    )
-# errorNode: $this.person2
+# node 5:
+#   "node.6":
+#     node7: value
 
-# person2:
-#   name: $this.nameFac
-#   nameInText: My name is ${this.nameFac(name=bahaa) as scalar} Taha
+# node2: $this.node
+
+node3: $import.dd.data."node with sapce" ll=ff
+# node111: { $this."node 5"."node.6" }
+
+# node99: $import.dd.data ll=mm

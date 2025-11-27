@@ -6,6 +6,7 @@ import {
   readUntilClose,
   read,
   readUntilChar,
+  readUntilCharInclusive,
 } from "./helpers.js";
 import { tokenizeArgs } from "./arguments.js";
 import {
@@ -34,6 +35,7 @@ export function tokenizeExpr(
   let state = initExprTokenState(input);
   while (true) {
     const toks = nextExprToken(state, tempState, textTok);
+    console.dir(toks, { depth: 10 });
     tokens.push(...toks);
     if (tokens[tokens.length - 1].type === ExprTokenType.EOF) break;
   }
@@ -247,7 +249,7 @@ function readQuotedPath(
 ): ExprToken[] {
   let tokens: ExprToken[] = [];
   const start = state.pos;
-  const readValue = readUntilChar(state, start, current(state));
+  const readValue = readUntilCharInclusive(state, start, current(state));
   if (!readValue) return [];
   const value = readValue.text;
   const pos: Pos = [start, state.pos];

@@ -1399,6 +1399,51 @@ function readUntilChar(state, start, stopChar, ignoreTextTrim) {
     const text = ignoreTextTrim ? out : out.trim();
     return { raw, text };
 }
+function readUntilCharInclusive(state, start, stopChar, ignoreTextTrim) {
+    var _a;
+    if (eof(state))
+        return;
+    let out = "";
+    const checkStop = stopChar instanceof RegExp
+        ? (ch) => stopChar.test(ch)
+        : Array.isArray(stopChar)
+            ? (ch) => stopChar.includes(ch)
+            : stopChar.length > 1
+                ? () => peek(state, stopChar.length) === stopChar
+                : (ch) => ch === stopChar;
+    let firstChar = true;
+    while (!eof(state)) {
+        const ch = current(state);
+        if (ch === "\\") {
+            state.pos = advance(state);
+            if (eof(state))
+                break;
+            const esc = current(state);
+            const map = {
+                n: "\n",
+                r: "\r",
+                t: "\t",
+                "'": "'",
+                '"': '"',
+                "\\": "\\",
+            };
+            out += (_a = map[esc]) !== null && _a !== void 0 ? _a : esc;
+            state.pos = advance(state);
+            continue;
+        }
+        if (checkStop(ch) && !firstChar) {
+            out += ch;
+            state.pos = advance(state);
+            break;
+        }
+        out += ch;
+        state.pos = advance(state);
+        firstChar = false;
+    }
+    const raw = state.input.slice(start, state.pos);
+    const text = out.trim();
+    return { raw, text };
+}
 
 /**
  * Token types from text step of scalar tokenizer
@@ -1522,7 +1567,7 @@ function nextArgsToken$1(state, tempState, parentTok) {
 function readQuoted(state, tempState, parentTok) {
     let tokens = [];
     const start = state.pos;
-    const readValue = readUntilChar(state, start, current(state));
+    const readValue = readUntilCharInclusive(state, start, current(state));
     if (!readValue)
         return tokens; // if only white space omit token
     const value = state.afterEqual
@@ -1688,6 +1733,7 @@ function tokenizeExpr(input, textTok, tempState, depth, tokenizeTextFunc) {
     let state = initExprTokenState(input);
     while (true) {
         const toks = nextExprToken(state, tempState, textTok);
+        console.dir(toks, { depth: 10 });
         tokens.push(...toks);
         if (tokens[tokens.length - 1].type === exports.ExprTokenType.EOF)
             break;
@@ -1877,7 +1923,7 @@ function nextExprToken(state, tempState, parentTok) {
 function readQuotedPath(state, tempState, parentTok) {
     let tokens = [];
     const start = state.pos;
-    const readValue = readUntilChar(state, start, current(state));
+    const readValue = readUntilCharInclusive(state, start, current(state));
     if (!readValue)
         return [];
     const value = readValue.text;
@@ -2593,11 +2639,11 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
     // get alias (second path) and verify it
     const aliasTok = ctx.paths[1];
     if (!aliasTok) {
-        tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "You have to pass an alias after expression base"));
+        tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "You have to pass an alias after expression base."));
         return undefined;
     }
     if (!verifyAlias(aliasTok.path, baseTok.path, state, tempState)) {
-        tempState.errors.push(new YAMLExprError(aliasTok.tok.pos, "", "Alias used is not defined in directives"));
+        tempState.errors.push(new YAMLExprError(aliasTok.tok.pos, "", `Alias used: ${aliasTok.path} is not defined in directives.`));
         return undefined;
     }
     // verify arguments if passed

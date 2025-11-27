@@ -4,6 +4,7 @@ import {
   mergeTokenPosition,
   read,
   readUntilChar,
+  readUntilCharInclusive,
 } from "./helpers.js";
 import {
   type KeyValueToken,
@@ -124,7 +125,7 @@ function readQuoted(
 ): KeyValueToken[] {
   let tokens: KeyValueToken[] = [];
   const start = state.pos;
-  const readValue = readUntilChar(state, start, current(state));
+  const readValue = readUntilCharInclusive(state, start, current(state));
   if (!readValue) return tokens; // if only white space omit token
   const value = state.afterEqual
     ? getValueFromText(readValue.text)

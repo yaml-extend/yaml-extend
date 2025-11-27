@@ -13,7 +13,6 @@ import {
   type ExprToken,
   LinePos,
   Pos,
-  RawToken,
   type TokenizeTextFunc,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";

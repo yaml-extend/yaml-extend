@@ -149,3 +149,59 @@ export function readUntilChar<S extends BasicState>(
 
   return { raw, text };
 }
+
+export function readUntilCharInclusive<S extends BasicState>(
+  state: S,
+  start: number,
+  stopChar: string | string[] | RegExp,
+  ignoreTextTrim?: boolean
+) {
+  if (eof(state)) return;
+  let out = "";
+  const checkStop =
+    stopChar instanceof RegExp
+      ? (ch: string) => stopChar.test(ch)
+      : Array.isArray(stopChar)
+      ? (ch: string) => stopChar.includes(ch)
+      : stopChar.length > 1
+      ? () => peek(state, stopChar.length) === stopChar
+      : (ch: string) => ch === stopChar;
+
+  let firstChar: boolean = true;
+
+  while (!eof(state)) {
+    const ch = current(state);
+
+    if (ch === "\\") {
+      state.pos = advance(state);
+      if (eof(state)) break;
+      const esc = current(state);
+      const map: Record<string, string> = {
+        n: "\n",
+        r: "\r",
+        t: "\t",
+        "'": "'",
+        '"': '"',
+        "\\": "\\",
+      };
+      out += map[esc] ?? esc;
+      state.pos = advance(state);
+      continue;
+    }
+
+    if (checkStop(ch) && !firstChar) {
+      out += ch;
+      state.pos = advance(state);
+      break;
+    }
+
+    out += ch;
+    state.pos = advance(state);
+    firstChar = false;
+  }
+
+  const raw = state.input.slice(start, state.pos);
+  const text = ignoreTextTrim ? out : out.trim();
+
+  return { raw, text };
+}

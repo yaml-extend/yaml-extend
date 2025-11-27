@@ -11,7 +11,7 @@ import {
 import { YAMLExprError } from "../../../extendClasses/error.js";
 import { verifyPath } from "../../utils/path.js";
 import { stringify } from "../../utils/random.js";
-import { TempParseState } from "../../parseTypes.js";
+import { ParseState, TempParseState } from "../../parseTypes.js";
 
 export function verifyFilename(
   dir: FilenameDirectiveToken,
@@ -49,6 +49,7 @@ export function verifyFilename(
 export function verifyImport(
   dir: ImportDirectiveToken,
   directives: Directives,
+  state: ParseState,
   tempState: TempParseState
 ): void {
   // make sure that alias is used
@@ -90,15 +91,25 @@ export function verifyImport(
   }
 
   // verify path
-  const validPath = verifyPath(tempState.resolvedPath, tempState);
-  if (!validPath.status) {
-    const message =
-      validPath.error === "sandBox"
-        ? "path is out of scope of sandbox"
-        : validPath.error === "yamlFile"
-        ? "path extension is not '.yaml' or '.yml'"
-        : "path doesn't exist on filesystem";
-    const error = new YAMLExprError(dir.pos, "", `Invalid path, ${message}`);
+  const { status, errorMessage } = verifyPath(dir.resolvedPath!, tempState);
+  if (!status) {
+    const error = new YAMLExprError(dir.pos, "", errorMessage);
+    dir.errors.push(error);
+    dir.valid = false;
+    directives.errors.push(error);
+  }
+
+  // bind nodes and check for circular dependencies
+  const circularDep = state.dependency.bindPaths(
+    tempState.resolvedPath,
+    dir.resolvedPath!
+  );
+  if (circularDep) {
+    const error = new YAMLExprError(
+      dir.pos,
+      "",
+      `Circular dependency detected: ${circularDep.join(" -> ")}.`
+    );
     dir.errors.push(error);
     dir.valid = false;
     directives.errors.push(error);

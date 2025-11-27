@@ -16,7 +16,8 @@ import {
   verifyVersion,
 } from "./verify.js";
 import { getLinePosFromRange, getValueFromText } from "../../utils/random.js";
-import { TempParseState } from "../../parseTypes.js";
+import { ParseState, TempParseState } from "../../parseTypes.js";
+import { mergePath } from "../../utils/path.js";
 
 /* ---------------------- Tokenizer for a single line (with spans) ---------------------- */
 /**
@@ -428,6 +429,8 @@ export function parseDirectiveFromTokens(
       for (const [k, t] of Object.entries(params))
         resolvedParams[k] = t.value?.value;
 
+      const resolvedPath = pathTok?.text && mergePath(pathTok.text, tempState);
+
       return {
         type: "IMPORT",
         rawLine,
@@ -440,6 +443,7 @@ export function parseDirectiveFromTokens(
         path: pathTok,
         params,
         resolvedParams,
+        resolvedPath,
       };
     }
 
@@ -551,6 +555,7 @@ export function parseDirectiveFromTokens(
  */
 export function tokenizeDirectives(
   text: string,
+  state: ParseState,
   tempState: TempParseState
 ): Directives {
   const lines = text.split(/\r?\n/);
@@ -579,7 +584,7 @@ export function tokenizeDirectives(
             break;
 
           case "IMPORT":
-            verifyImport(dir, directives, tempState);
+            verifyImport(dir, directives, state, tempState);
             directives.import.push(dir);
             break;
 

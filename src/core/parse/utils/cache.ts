@@ -28,7 +28,7 @@ export async function handleModuleCache(
   tempState: TempParseState
 ): Promise<void> {
   // add path to dependcy class
-  state.dependency.addDep(tempState.resolvedPath, state.depth === 1);
+  state.dependency.addDep(tempState.resolvedPath, state.depth === 0);
 
   // check if module is present in cache, if not init it and return
   const moduleCache = state.cache.get(tempState.resolvedPath);
@@ -57,7 +57,7 @@ export async function handleModuleCache(
 async function initModuleCache(state: ParseState, tempState: TempParseState) {
   // get cache data
   const sourceHash = hashStr(tempState.resolvedPath);
-  const directives = tokenizeDirectives(tempState.source, tempState);
+  const directives = tokenizeDirectives(tempState.source, state, tempState);
   const AST = handleAST(tempState);
 
   // generate new cache

@@ -1,7 +1,6 @@
 import { traverseNodes, verifyNodeType } from "./helpers.js";
 import type { Context } from "./index.js";
 import { deepClone } from "../../utils/random.js";
-import { mergePath } from "../../utils/path.js";
 import { ParseState, TempParseState } from "../../parseTypes.js";
 import { getImport } from "../directives/index.js";
 import { YAMLExprError } from "../../../extendClasses/error.js";
@@ -67,25 +66,12 @@ async function importModule(
   state: ParseState,
   tempState: TempParseState
 ): Promise<unknown> {
-  // merge paths
-  const { status, value: resolvedPath } = mergePath(
-    targetPath,
-    state,
-    tempState
-  );
-
-  if (!status) return;
-
   // deep clone options and update params
   const clonedOptions = deepClone(tempState.options);
   clonedOptions.params = targetParams;
 
   // load str
-  const parseData = await tempState.parseFunc(
-    resolvedPath,
-    clonedOptions,
-    state
-  );
+  const parseData = await tempState.parseFunc(targetPath, clonedOptions, state);
   // push any errors
   tempState.importedErrors.push(...parseData.errors);
 

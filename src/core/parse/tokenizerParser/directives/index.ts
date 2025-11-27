@@ -86,7 +86,7 @@ export function getImport(
     if (!tok.valid && validCheck) continue;
     if (tok.alias?.value === alias)
       return {
-        path: tok.path?.value as string,
+        path: tok.resolvedPath as string,
         defaultParams: tok.resolvedParams,
       };
   }
@@ -125,7 +125,7 @@ export function getAllImports(
     if (!tok.valid && validCheck) continue;
     imports.push({
       alias: tok.alias?.text,
-      path: tok.path?.text,
+      path: tok.resolvedPath,
       defaultParams: tok.resolvedParams,
     });
   }

@@ -1,7 +1,6 @@
 import { parseExtend } from "../src/core/parse/index.js";
 
-const parsed = await parseExtend("./test.yaml", {
-  basePath: "./test",
+const parsed = await parseExtend("./test/test.yaml", {
   ignoreTags: true,
 });
 

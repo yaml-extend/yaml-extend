@@ -101,6 +101,7 @@ type ImportDirectiveToken = RawDirectiveToken & {
     path: RawToken<string> | undefined;
     params: Record<string, ImportParamInfo>;
     resolvedParams: Record<string, unknown>;
+    resolvedPath: string | undefined;
 };
 /**
  * LOCAL's directive token.
@@ -319,6 +320,8 @@ type ParseState = {
     dependency: DependencyHandler;
     /** Internally used only. */
     depth: number;
+    /** Array of paths parsed by order. */
+    parsedPaths: string[];
 };
 /**
  * Additional options that can be passed to parse function used by extend module.

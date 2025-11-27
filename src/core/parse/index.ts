@@ -9,6 +9,7 @@ import {
   getParseEntery,
   setParseEntery,
   handleModuleCache,
+  purgeCache,
 } from "./utils/cache.js";
 import { resolve, resolveUnknown } from "./resolve/index.js";
 import {
@@ -21,7 +22,7 @@ import {
 import { DependencyHandler } from "./utils/depHandler.js";
 import { resolve as resolvePath } from "path";
 import { getAllImports } from "./tokenizerParser/directives/index.js";
-import { YAMLError } from "../extendClasses/error.js";
+import { YAMLError, YAMLExprError } from "../extendClasses/error.js";
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Main load functions.
@@ -82,11 +83,10 @@ export async function parseExtend(
   const ts = initTempState(path, options);
 
   try {
-    // increment depth
-    s.depth++;
+    // s.parsedPaths.push()
 
     // verify path
-    if (!verifyPath(ts.resolvedPath, ts))
+    if (!verifyPath(ts.resolvedPath, ts).status)
       return {
         parse: undefined,
         errors: ts.errors,
@@ -124,18 +124,6 @@ export async function parseExtend(
     // resolve AST
     const resolved = await resolve(s, ts, cache);
 
-    // add filename, path and extendLinePos for this file's errors and update message by adding filename and path to it
-    for (const e of ts.errors) {
-      e.filename = ts.filename;
-      e.path = ts.resolvedPath;
-      e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
-      e.message =
-        e.message +
-        ` This error occured in file: ${
-          e.filename ? e.filename : "Not defined"
-        }, at path: ${e.path}`;
-    }
-
     // generate parseEntery for this file
     const parseEntery: ParseEntry = {
       parse: resolved,
@@ -151,8 +139,37 @@ export async function parseExtend(
       state: ts.options.returnState ? s : undefined,
       cache: ts.options.returnState ? cache : undefined,
     };
+  } catch (error) {
+    // reset state
+    s.depth = -1;
+    // push thrown error and return
+    const err = new YAMLExprError(
+      [0, 0],
+      "",
+      `Unkown error thrown: ${(error as Error).message}`
+    );
+    ts.errors.push(err);
+    return {
+      parse: undefined,
+      errors: ts.errors,
+      importedErrors: ts.importedErrors,
+      state: ts.options.returnState ? s : undefined,
+      cache: undefined,
+    };
   } finally {
-    s.dependency.purge();
+    // add filename, path and extendLinePos for this file's errors and update message by adding filename and path to it
+    for (const e of ts.errors) {
+      e.filename = ts.filename;
+      e.path = ts.resolvedPath;
+      e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
+      e.message =
+        e.message +
+        ` This error occured in file: ${
+          e.filename ? e.filename : "Not defined"
+        }, at path: ${e.path}`;
+    }
+    // purge cache for any unused module and update depth
+    purgeCache(s);
     s.depth--;
   }
 }
@@ -168,12 +185,18 @@ export type ParseExtend = typeof parseExtend;
  * @returns State object that holds data and cache needed to be presisted along parses of different YAML files.
  */
 export function initState(state?: ParseState): ParseState {
-  if (state) return state;
-  return {
-    cache: new Map(),
-    dependency: new DependencyHandler(),
-    depth: 0,
-  };
+  // if state is passed use it, otherwise create new one
+  const s: ParseState = state
+    ? state
+    : {
+        cache: new Map(),
+        dependency: new DependencyHandler(),
+        depth: -1,
+        parsedPaths: [],
+      };
+  // increment depth and return the state
+  s.depth++;
+  return s;
 }
 
 /**

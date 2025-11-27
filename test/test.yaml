@@ -1,6 +1,6 @@
 %FILENAME test
 %LOCAL name scalar ziad
-# %IMPORT test2 "./test2.yaml" data={"node":"value"}
+%IMPORT test2 "./test2.yaml" data={"node":"value"}
 %PRIVATE data
 ---
 nameFac: $local.name
@@ -8,12 +8,12 @@ nameFac: $local.name
 data:
   feild1: value1 $import() as ff ${this.nameFac}
   feild2: value2
-# person1:
-#   name: $this.nameFac(name=ahmed) as scalar
-#   test2: $import.test2.node(
-#     work = hero,
-#     data = $this.data
-#     )
+person1:
+  name: $this.nameFac(name=ahmed) as scalar
+  test2: $import.test2.node(
+    work = hero,
+    data = $this.data
+    )
 # errorNode: $this.person2
 
 # person2:

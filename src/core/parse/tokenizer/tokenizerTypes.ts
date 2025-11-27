@@ -117,6 +117,7 @@ export type ImportDirectiveToken = RawDirectiveToken & {
   path: RawToken<string> | undefined;
   params: Record<string, ImportParamInfo>;
   resolvedParams: Record<string, unknown>;
+  resolvedPath: string | undefined;
 };
 
 /**

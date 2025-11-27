@@ -6,94 +6,44 @@ var fs = require('fs');
 var path = require('path');
 var crypto = require('crypto');
 
-// Base new ErrorName and ErrorCode into YAMLError class
-class YAMLError extends yaml.YAMLError {
-    constructor(name, pos, code, message) {
-        // @ts-ignore
-        super(name, pos, code, message);
-        this.path = "";
-        this.filename = "";
-    }
-}
-// New YAMLExprError class
-class YAMLExprError extends YAMLError {
-    constructor(pos, code, message) {
-        super("YAMLExprError", pos, code, message);
-    }
-}
-class YAMLParseError extends YAMLError {
-    constructor(pos, code, message) {
-        super("YAMLParseError", pos, code, message);
-    }
-}
-class YAMLWarning extends YAMLError {
-    constructor(pos, code, message) {
-        super("YAMLWarning", pos, code, message);
-    }
-}
-
-// Path related helper functions.
-/**
- * Function to resolve paths by adding basepath (path of the current module) and path (path of the imported or read module) together making absolute path of them.
- * @param state - Path of the current module.
- * @returns Read value of the file in UTF-8 format.
- */
 function verifyPath(path, tempState) {
     // get base path and resolved path
     const basePath = tempState.options.basePath;
-    // handle sandbox check
-    if (!isInsideSandBox(path, basePath) && !tempState.options.unsafe) {
-        tempState.errors.push(new YAMLExprError([0, 99999], "", `Path used: ${path} is out of scope of base path: ${basePath}.`));
-        return { status: false, error: "sandBox" };
-    }
-    // handle yaml file check
-    if (!isYamlFile(path)) {
-        tempState.errors.push(new YAMLExprError([0, 99999], "", `You can only parse YAML files that end with '.yaml' or '.yml' extension, path used: ${path}.`));
-        return { status: false, error: "yamlFile" };
-    }
     // make sure path is indeed present
-    if (!fs.existsSync(path)) {
-        tempState.errors.push(new YAMLExprError([0, 99999], "", `Path used: ${path} is not present in filesystem.`));
-        return { status: false, error: "exist" };
-    }
-    return { status: true };
+    if (!fs.existsSync(path))
+        return {
+            status: false,
+            errorMessage: `Invalid path, Path used: ${path} is not present in filesystem.`,
+        };
+    // handle yaml file check
+    if (!isYamlFile(path))
+        return {
+            status: false,
+            errorMessage: `Invalid path, You can only parse YAML files that end with '.yaml' or '.yml' extension, path used: ${path}.`,
+        };
+    // handle sandbox check
+    if (!tempState.options.unsafe && !isInsideSandBox(path, basePath))
+        return {
+            status: false,
+            errorMessage: `Invalid path, Path used: ${path} is out of scope of base path: ${basePath}.`,
+        };
+    return { status: true, errorMessage: undefined };
 }
-/**
- * Method to handle relative paths by resolving & insuring that they live inside the sandbox and are actual YAML files, also detect circular dependency if present.
- * @param basePath - Base path defined by user in the options (or cwd if was omitted by user) that will contain and sandbox all imports.
- * @param modulePath - Path of the current YAML file.
- * @param targetPath - Path of the imported YAML file.
- * @param loadOpts - Options object passed to load function and updated using imported module's filepath.
- * @param loadId - Unique id that identifies this load.
- * @returns Resolved safe path that will be passed to fs readFile function.
- */
-function mergePath(targetPath, state, tempState) {
-    // get resolved path and base path
+function mergePath(targetPath, tempState) {
     const modulePath = path.dirname(tempState.resolvedPath);
     const resPath = path.resolve(modulePath, targetPath);
-    // verify path
-    const verified = verifyPath(resPath, tempState);
-    if (!verified)
-        return { status: false, value: undefined };
-    // bind nodes and check for circular dependencies
-    const circularDep = state.dependency.bindPaths(modulePath, resPath);
-    if (circularDep) {
-        tempState.errors.push(new YAMLExprError([0, 99999], "", `Circular dependency detected: ${circularDep.join(" -> ")}.`));
-        return { status: false, value: undefined };
-    }
-    // return path
-    return { status: true, value: resPath };
+    return resPath;
 }
 /**
  * Function to check if file reads are black boxed.
- * @param resolvedPath - Resolved path from concatinating current file path with imported file path. works async.
+ * @param path - Resolved path from concatinating current file path with imported file path. works async.
  * @param basePath - Base path passed in opts of load function. used to black box the file reads.
  * @returns Boolean that indicates if resolved path actually lives inside base path.
  */
-function isInsideSandBox(resolvedPath, basePath) {
+function isInsideSandBox(path$1, basePath) {
     // Resolve symlinks to avoid escaping via symlink tricks
     const realBase = fs.realpathSync(basePath);
-    const realRes = fs.realpathSync(resolvedPath);
+    const realRes = fs.realpathSync(path$1);
     // Windows: different root/drive => definitely outside (compare case-insensitive)
     const baseRoot = path.parse(realBase).root.toLowerCase();
     const resRoot = path.parse(realRes).root.toLowerCase();
@@ -281,6 +231,32 @@ function hashStr(str) {
     return crypto.createHash("sha256").update(str).digest().toString("hex");
 }
 
+// Base new ErrorName and ErrorCode into YAMLError class
+class YAMLError extends yaml.YAMLError {
+    constructor(name, pos, code, message) {
+        // @ts-ignore
+        super(name, pos, code, message);
+        this.path = "";
+        this.filename = "";
+    }
+}
+// New YAMLExprError class
+class YAMLExprError extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLExprError", pos, code, message);
+    }
+}
+class YAMLParseError extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLParseError", pos, code, message);
+    }
+}
+class YAMLWarning extends YAMLError {
+    constructor(pos, code, message) {
+        super("YAMLWarning", pos, code, message);
+    }
+}
+
 function verifyFilename(dir, directives) {
     var _a;
     // verify filename
@@ -302,7 +278,7 @@ function verifyFilename(dir, directives) {
     if (filename)
         dir.filename.value = stringify(filename);
 }
-function verifyImport(dir, directives, tempState) {
+function verifyImport(dir, directives, state, tempState) {
     var _a, _b;
     // make sure that alias is used
     const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
@@ -328,14 +304,17 @@ function verifyImport(dir, directives, tempState) {
         directives.errors.push(error);
     }
     // verify path
-    const validPath = verifyPath(tempState.resolvedPath, tempState);
-    if (!validPath.status) {
-        const message = validPath.error === "sandBox"
-            ? "path is out of scope of sandbox"
-            : validPath.error === "yamlFile"
-                ? "path extension is not '.yaml' or '.yml'"
-                : "path doesn't exist on filesystem";
-        const error = new YAMLExprError(dir.pos, "", `Invalid path, ${message}`);
+    const { status, errorMessage } = verifyPath(dir.resolvedPath, tempState);
+    if (!status) {
+        const error = new YAMLExprError(dir.pos, "", errorMessage);
+        dir.errors.push(error);
+        dir.valid = false;
+        directives.errors.push(error);
+    }
+    // bind nodes and check for circular dependencies
+    const circularDep = state.dependency.bindPaths(tempState.resolvedPath, dir.resolvedPath);
+    if (circularDep) {
+        const error = new YAMLExprError(dir.pos, "", `Circular dependency detected: ${circularDep.join(" -> ")}.`);
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -846,6 +825,7 @@ function parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState) {
             let resolvedParams = {};
             for (const [k, t] of Object.entries(params))
                 resolvedParams[k] = (_a = t.value) === null || _a === void 0 ? void 0 : _a.value;
+            const resolvedPath = (pathTok === null || pathTok === void 0 ? void 0 : pathTok.text) && mergePath(pathTok.text, tempState);
             return {
                 type: "IMPORT",
                 rawLine,
@@ -858,6 +838,7 @@ function parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState) {
                 path: pathTok,
                 params,
                 resolvedParams,
+                resolvedPath,
             };
         }
         if (type === "LOCAL") {
@@ -960,7 +941,7 @@ function parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState) {
  * Scan a multi-line YAML text and return all directives found with spans.
  * A directive is recognized only when '%' appears at the start of a line (column 0).
  */
-function tokenizeDirectives(text, tempState) {
+function tokenizeDirectives(text, state, tempState) {
     const lines = text.split(/\r?\n/);
     let strIdx = 0; // var to hold idx inside the hole text not only one line
     const directives = {
@@ -985,7 +966,7 @@ function tokenizeDirectives(text, tempState) {
                         directives.filename.push(dir);
                         break;
                     case "IMPORT":
-                        verifyImport(dir, directives, tempState);
+                        verifyImport(dir, directives, state, tempState);
                         directives.import.push(dir);
                         break;
                     case "LOCAL":
@@ -1072,26 +1053,26 @@ function getPrivate(tokens, validCheck, getTokens) {
     return paths;
 }
 function getImport(tokens, alias, validCheck) {
-    var _a, _b;
+    var _a;
     for (const tok of tokens) {
         if (!tok.valid && validCheck)
             continue;
         if (((_a = tok.alias) === null || _a === void 0 ? void 0 : _a.value) === alias)
             return {
-                path: (_b = tok.path) === null || _b === void 0 ? void 0 : _b.value,
+                path: tok.resolvedPath,
                 defaultParams: tok.resolvedParams,
             };
     }
 }
 function getAllImports(tokens, validCheck) {
-    var _a, _b;
+    var _a;
     const imports = [];
     for (const tok of tokens) {
         if (!tok.valid && validCheck)
             continue;
         imports.push({
             alias: (_a = tok.alias) === null || _a === void 0 ? void 0 : _a.text,
-            path: (_b = tok.path) === null || _b === void 0 ? void 0 : _b.text,
+            path: tok.resolvedPath,
             defaultParams: tok.resolvedParams,
         });
     }
@@ -1160,7 +1141,7 @@ function getAllLocals(tokens, validCheck) {
 async function handleModuleCache(state, tempState) {
     var _a;
     // add path to dependcy class
-    state.dependency.addDep(tempState.resolvedPath, state.depth === 1);
+    state.dependency.addDep(tempState.resolvedPath, state.depth === 0);
     // check if module is present in cache, if not init it and return
     const moduleCache = state.cache.get(tempState.resolvedPath);
     if (!moduleCache) {
@@ -1186,7 +1167,7 @@ async function initModuleCache(state, tempState) {
     var _a;
     // get cache data
     const sourceHash = hashStr(tempState.resolvedPath);
-    const directives = tokenizeDirectives(tempState.source, tempState);
+    const directives = tokenizeDirectives(tempState.source, state, tempState);
     const AST = handleAST(tempState);
     // generate new cache
     const cache = {
@@ -2420,15 +2401,11 @@ async function handleImport(ctx, state, tempState) {
  * @returns Final load of the imported file.
  */
 async function importModule(targetPath, targetParams, state, tempState) {
-    // merge paths
-    const { status, value: resolvedPath } = mergePath(targetPath, state, tempState);
-    if (!status)
-        return;
     // deep clone options and update params
     const clonedOptions = deepClone(tempState.options);
     clonedOptions.params = targetParams;
     // load str
-    const parseData = await tempState.parseFunc(resolvedPath, clonedOptions, state);
+    const parseData = await tempState.parseFunc(targetPath, clonedOptions, state);
     // push any errors
     tempState.importedErrors.push(...parseData.errors);
     // return load
@@ -2767,7 +2744,7 @@ async function resolve(state, tempState, cache) {
     // resolve
     const parse = await resolveUnknown(cache.AST, false, state, tempState);
     // remove private nodes if set to do so only
-    const ignorePrivate = tempState.options.ignorePrivate && state.depth === 1;
+    const ignorePrivate = tempState.options.ignorePrivate && state.depth === 0;
     if (!ignorePrivate)
         filterPrivate(parse, tempState, cache);
     //  and return value
@@ -3169,10 +3146,9 @@ async function parseExtend(path, options = {}, state) {
     const s = initState(state);
     const ts = initTempState(path, options);
     try {
-        // increment depth
-        s.depth++;
+        // s.parsedPaths.push()
         // verify path
-        if (!verifyPath(ts.resolvedPath, ts))
+        if (!verifyPath(ts.resolvedPath, ts).status)
             return {
                 parse: undefined,
                 errors: ts.errors,
@@ -3203,15 +3179,6 @@ async function parseExtend(path, options = {}, state) {
         await handleImports(s, ts, cache);
         // resolve AST
         const resolved = await resolve(s, ts, cache);
-        // add filename, path and extendLinePos for this file's errors and update message by adding filename and path to it
-        for (const e of ts.errors) {
-            e.filename = ts.filename;
-            e.path = ts.resolvedPath;
-            e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
-            e.message =
-                e.message +
-                    ` This error occured in file: ${e.filename ? e.filename : "Not defined"}, at path: ${e.path}`;
-        }
         // generate parseEntery for this file
         const parseEntery = {
             parse: resolved,
@@ -3226,8 +3193,32 @@ async function parseExtend(path, options = {}, state) {
             cache: ts.options.returnState ? cache : undefined,
         };
     }
+    catch (error) {
+        // reset state
+        s.depth = -1;
+        // push thrown error and return
+        const err = new YAMLExprError([0, 0], "", `Unkown error thrown: ${error.message}`);
+        ts.errors.push(err);
+        return {
+            parse: undefined,
+            errors: ts.errors,
+            importedErrors: ts.importedErrors,
+            state: ts.options.returnState ? s : undefined,
+            cache: undefined,
+        };
+    }
     finally {
-        s.dependency.purge();
+        // add filename, path and extendLinePos for this file's errors and update message by adding filename and path to it
+        for (const e of ts.errors) {
+            e.filename = ts.filename;
+            e.path = ts.resolvedPath;
+            e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
+            e.message =
+                e.message +
+                    ` This error occured in file: ${e.filename ? e.filename : "Not defined"}, at path: ${e.path}`;
+        }
+        // purge cache for any unused module and update depth
+        purgeCache(s);
         s.depth--;
     }
 }
@@ -3239,13 +3230,18 @@ async function parseExtend(path, options = {}, state) {
  * @returns State object that holds data and cache needed to be presisted along parses of different YAML files.
  */
 function initState(state) {
-    if (state)
-        return state;
-    return {
-        cache: new Map(),
-        dependency: new DependencyHandler(),
-        depth: 0,
-    };
+    // if state is passed use it, otherwise create new one
+    const s = state
+        ? state
+        : {
+            cache: new Map(),
+            dependency: new DependencyHandler(),
+            depth: -1,
+            parsedPaths: [],
+        };
+    // increment depth and return the state
+    s.depth++;
+    return s;
 }
 /**
  * Function to initialize temporary parser state.

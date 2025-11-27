@@ -1,7 +1,6 @@
 %FILENAME "Some name"
 %PARAM work scalar whore
 %PARAM data map
-%PRIVATE node
 ---
 node:
   work: $param.work

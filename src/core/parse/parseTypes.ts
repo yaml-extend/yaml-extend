@@ -39,6 +39,8 @@ export type ParseState = {
   dependency: DependencyHandler;
   /** Internally used only. */
   depth: number;
+  /** Array of paths parsed by order. */
+  parsedPaths: string[];
 };
 
 /**

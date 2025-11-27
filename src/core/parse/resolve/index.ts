@@ -20,7 +20,7 @@ export async function resolve(
   const parse = await resolveUnknown(cache.AST, false, state, tempState);
 
   // remove private nodes if set to do so only
-  const ignorePrivate = tempState.options.ignorePrivate && state.depth === 1;
+  const ignorePrivate = tempState.options.ignorePrivate && state.depth === 0;
   if (!ignorePrivate) filterPrivate(parse, tempState, cache);
 
   //  and return value

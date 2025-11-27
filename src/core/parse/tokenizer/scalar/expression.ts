@@ -43,7 +43,7 @@ export function tokenizeExpr(
   for (const t of tokens)
     if (t.type === ExprTokenType.ARGS)
       t.argsTokens = tokenizeArgs(
-        t.raw ? t.raw : "",
+        t.raw ? t.raw.trim() : "",
         t,
         tempState,
         depth,

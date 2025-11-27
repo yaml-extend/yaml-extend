@@ -44,7 +44,7 @@ export function tokenizeText(
   for (const t of tokens)
     if (t.type === TextTokenType.EXPR)
       t.exprTokens = tokenizeExpr(
-        t.raw ? t.raw : "",
+        t.raw ? t.raw.trim() : "",
         t,
         tempState,
         depth,

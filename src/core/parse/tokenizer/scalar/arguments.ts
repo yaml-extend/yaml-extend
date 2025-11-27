@@ -39,7 +39,7 @@ export function tokenizeArgs(
   for (const t of tokens)
     if (t.type === ArgsTokenType.KEY_VALUE)
       t.keyValueToks = tokenizeKeyValue(
-        t.raw ? t.raw : "",
+        t.raw ? t.raw.trim() : "",
         t,
         tempState,
         depth,

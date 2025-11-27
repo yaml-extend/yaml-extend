@@ -1636,7 +1636,7 @@ function tokenizeArgs(input, exprTok, tempState, depth, tokenizeTextFunc) {
     // resolve any value tokens using text tokenizer
     for (const t of tokens)
         if (t.type === ArgsTokenType.KEY_VALUE)
-            t.keyValueToks = tokenizeKeyValue(t.raw ? t.raw : "", t, tempState, depth, tokenizeTextFunc);
+            t.keyValueToks = tokenizeKeyValue(t.raw ? t.raw.trim() : "", t, tempState, depth, tokenizeTextFunc);
     // return
     return tokens;
 }
@@ -1739,7 +1739,7 @@ function tokenizeExpr(input, textTok, tempState, depth, tokenizeTextFunc) {
     // tokenize args inside ARGS token
     for (const t of tokens)
         if (t.type === ExprTokenType.ARGS)
-            t.argsTokens = tokenizeArgs(t.raw ? t.raw : "", t, tempState, depth, tokenizeTextFunc);
+            t.argsTokens = tokenizeArgs(t.raw ? t.raw.trim() : "", t, tempState, depth, tokenizeTextFunc);
     // return
     return tokens;
 }
@@ -2021,7 +2021,7 @@ function tokenizeText(input, keyValueTok, tempState, depth = 0) {
     // tokenize expression inside EXPR tokens
     for (const t of tokens)
         if (t.type === TextTokenType.EXPR)
-            t.exprTokens = tokenizeExpr(t.raw ? t.raw : "", t, tempState, depth, tokenizeText);
+            t.exprTokens = tokenizeExpr(t.raw ? t.raw.trim() : "", t, tempState, depth, tokenizeText);
     // return
     return tokens;
 }
@@ -2631,7 +2631,7 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
     // get base (first path) and verify it
     const baseTok = ctx.paths[0];
     if (!baseTok) {
-        tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", "Base is missing from this expression"));
+        tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", "Base is missing from this expression."));
         return undefined;
     }
     if (!verifyBase(baseTok.path)) {

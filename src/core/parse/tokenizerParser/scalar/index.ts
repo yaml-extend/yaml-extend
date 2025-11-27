@@ -209,7 +209,7 @@ async function handleExprTokens(
       new YAMLExprError(
         ctx.textToken.pos,
         "",
-        "Base is missing from this expression"
+        "Base is missing from this expression."
       )
     );
     return undefined;

@@ -83,8 +83,6 @@ export async function parseExtend(
   const ts = initTempState(path, options);
 
   try {
-    // s.parsedPaths.push()
-
     // verify path
     if (!verifyPath(ts.resolvedPath, ts).status)
       return {

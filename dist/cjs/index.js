@@ -1951,7 +1951,7 @@ function readPath(state, tempState, parentTok) {
     // Manual loop here to add custom check
     while (!eof(state)) {
         const ch = current(state);
-        if (ch === "." || (ch === "(" && !state.afterParen))
+        if (ch === "." || (ch === "(" && !state.afterParen) || /\s/.test(ch))
             break;
         if (ch === "\\") {
             state.pos = advance(state);
@@ -3191,7 +3191,6 @@ async function parseExtend(path, options = {}, state) {
     const s = initState(state);
     const ts = initTempState(path, options);
     try {
-        // s.parsedPaths.push()
         // verify path
         if (!verifyPath(ts.resolvedPath, ts).status)
             return {

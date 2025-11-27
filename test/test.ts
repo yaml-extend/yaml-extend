@@ -1,7 +1,13 @@
 import { parseExtend } from "../src/core/parse/index.js";
+import { LiveParser } from "../src/core/liveParser/index.js";
 
-const parsed = await parseExtend("./test/test.yaml", {
+const parser = new LiveParser({
+  returnState: true,
+  unsafe: true,
   ignoreTags: true,
 });
+const parsed1 = await parser.parse("./test/test.yaml");
+const parsed2 = await parser.parse("./test/test.yaml");
 
-console.dir(parsed, { depth: 10 });
+console.debug(parsed1.cache);
+console.debug(parsed2.cache);

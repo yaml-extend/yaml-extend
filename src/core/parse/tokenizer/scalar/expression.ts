@@ -282,7 +282,7 @@ function readPath(
   while (!eof(state)) {
     const ch = current(state);
 
-    if (ch === "." || (ch === "(" && !state.afterParen)) break;
+    if (ch === "." || (ch === "(" && !state.afterParen) || /\s/.test(ch)) break;
 
     if (ch === "\\") {
       state.pos = advance(state);

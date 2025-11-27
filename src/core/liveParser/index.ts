@@ -1,6 +1,7 @@
 import { initState, parseExtend } from "../parse/index.js";
 import { Options, ParseExtend, ParseState } from "../parse/parseTypes.js";
 import {
+  getModuleCache,
   getParseEntery,
   purgeCache,
   resetCache,
@@ -52,16 +53,16 @@ export class LiveParser {
     // add path as entry point
     this.state.dependency.addDep(path, true);
     // check cache, if present return directly
-    const cached = getParseEntery(
-      this.state,
-      path,
-      this._options.universalParams
-    );
-    if (cached)
-      return {
-        ...cached,
-        state: this._options.returnState ? this.state : undefined,
-      };
+    const cache = getModuleCache(this.state, path);
+    if (cache) {
+      const parseEntery = getParseEntery(cache, this._options.universalParams);
+      if (parseEntery)
+        return {
+          ...parseEntery,
+          state: this._options.returnState ? this.state : undefined,
+          cache: this._options.returnState ? cache : undefined,
+        };
+    }
     // parse and return value
     return await parseExtend(path, this._options, this.state);
   }

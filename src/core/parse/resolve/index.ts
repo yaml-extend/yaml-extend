@@ -13,11 +13,9 @@ import { handleScalar } from "../tokenizerParser/scalar/index.js";
  */
 export async function resolve(
   state: ParseState,
-  tempState: TempParseState
+  tempState: TempParseState,
+  cache: ModuleCache
 ): Promise<unknown> {
-  const cache = state.cache.get(tempState.resolvedPath);
-  if (!cache) return { parse: undefined, privateParse: undefined }; // should never execute
-
   // resolve
   const parse = await resolveUnknown(cache.AST, false, state, tempState);
 

@@ -414,29 +414,32 @@ type ModuleCache = {
  */
 type Cache = Map<string, ModuleCache>;
 
-declare function parseExtend(filepath: string, options: Options & {
+declare function parseExtend(path: string, options: Options & {
     returnState?: true;
 }, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
     state: ParseState;
+    cache: ModuleCache;
 }>;
-declare function parseExtend(filepath: string, options: Options & {
+declare function parseExtend(path: string, options: Options & {
     returnState?: false | undefined;
 }, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
     state: undefined;
+    cache: undefined;
 }>;
-declare function parseExtend(filepath: string, options?: Options & {
+declare function parseExtend(path: string, options?: Options & {
     returnState?: boolean | undefined;
 }, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
     state: ParseState | undefined;
+    cache: ModuleCache | undefined;
 }>;
 type ParseExtend = typeof parseExtend;
 

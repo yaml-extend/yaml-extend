@@ -1274,20 +1274,27 @@ function setParseEntery(state, tempState, parseEntery) {
     // set entery in cache
     parseCache.set(hashedParams, parseEntery);
 }
+/////////////////////////////////////////////////////////////////////////
+// Internal and External functions to interact with cache
+/**
+ * Function to get cache of specific YAML file from state.
+ * @param state - State object from first parse if this YAML file is imported.
+ * @param path - Path of YAML file in filesystem.
+ * @returns
+ */
+function getModuleCache(state, path) {
+    return state.cache.get(path);
+}
 /**
  * Function to get parse entery for specific YAML file with specific params value.
- * @param state - State object from first parse if this YAML file is imported.
- * @param filepath - Path of YAML file in filesystem.
+ * @param cache - Cache of the module.
  * @param params - All params passed to parseExtend during parsing YAML file, includes 'params' and 'universalParams' in options.
  * @returns
  */
-function getParseEntery(state, filepath, params) {
-    const moduleCache = state.cache.get(filepath);
-    if (!moduleCache)
-        return;
+function getParseEntery(cache, params) {
     // hash params and get cache of this load with params
     const hashedParams = hashParams(params !== null && params !== void 0 ? params : {});
-    return moduleCache.parseCache.get(hashedParams);
+    return cache.parseCache.get(hashedParams);
 }
 /**
  * Function to reset cache. it's advised to call it when options which affect output as 'schema', 'params', 'universalParams' and 'ignoreTags'
@@ -2577,10 +2584,7 @@ async function handleKeyValueTokens(tokens, state, tempState) {
  * @param opts - Options passed with this load function execution.
  * @returns Final load after resolving the blueprint, what is returned to the user after load functions finishes.
  */
-async function resolve(state, tempState) {
-    const cache = state.cache.get(tempState.resolvedPath);
-    if (!cache)
-        return { parse: undefined, privateParse: undefined }; // should never execute
+async function resolve(state, tempState, cache) {
     // resolve
     const parse = await resolveUnknown(cache.AST, false, state, tempState);
     // remove private nodes if set to do so only
@@ -2972,16 +2976,16 @@ class DependencyHandler {
 
 /**
  *
- * @param filepath - Path of YAML file in filesystem.
+ * @param path - Path of YAML file in filesystem.
  * @param options - Options object passed to control parser behavior.
  * @param state - For internal use don't pass any thing here.
  * @returns Object that hold parse value along with errors thrown in this YAML file and errors thrown in imported YAML files.
  */
-async function parseExtend(filepath, options = {}, state) {
+async function parseExtend(path, options = {}, state) {
     var _a, _b;
     // init state and temp state
     const s = initState(state);
-    const ts = initTempState(filepath, options);
+    const ts = initTempState(path, options);
     try {
         // increment depth
         s.depth++;
@@ -2992,24 +2996,31 @@ async function parseExtend(filepath, options = {}, state) {
                 errors: ts.errors,
                 importedErrors: ts.importedErrors,
                 state: ts.options.returnState ? s : undefined,
+                cache: undefined,
             };
         // read file and add source and lineStarts to tempState
         ts.source = await promises.readFile(ts.resolvedPath, { encoding: "utf8" });
         ts.lineStarts = getLineStarts(ts.source);
         // handle module cache
         await handleModuleCache(s, ts);
+        // get cache
+        const cache = s.cache.get(ts.resolvedPath);
         // check if load with same passed params is present in the cache and return it if present
         const comParams = {
             ...((_a = ts.options.params) !== null && _a !== void 0 ? _a : {}),
             ...((_b = ts.options.universalParams) !== null && _b !== void 0 ? _b : {}),
         };
-        const cachedParse = getParseEntery(s, ts.resolvedPath, comParams);
+        const cachedParse = getParseEntery(cache, comParams);
         if (cachedParse !== undefined)
-            return { ...cachedParse, state: ts.options.returnState ? s : undefined };
+            return {
+                ...cachedParse,
+                state: ts.options.returnState ? s : undefined,
+                cache: ts.options.returnState ? cache : undefined,
+            };
         // load imports before preceeding in resolving this module
-        await handleImports(s, ts);
+        await handleImports(s, ts, cache);
         // resolve AST
-        const resolved = await resolve(s, ts);
+        const resolved = await resolve(s, ts, cache);
         // add filename, path and extendLinePos for this file's errors and update message by adding filename and path to it
         for (const e of ts.errors) {
             e.filename = ts.filename;
@@ -3027,7 +3038,11 @@ async function parseExtend(filepath, options = {}, state) {
         };
         // add parse entery to the cache
         setParseEntery(s, ts, parseEntery);
-        return { ...parseEntery, state: ts.options.returnState ? s : undefined };
+        return {
+            ...parseEntery,
+            state: ts.options.returnState ? s : undefined,
+            cache: ts.options.returnState ? cache : undefined,
+        };
     }
     finally {
         s.dependency.purge();
@@ -3056,7 +3071,7 @@ function initState(state) {
  * @param options - Options object passed to control parser behavior.
  * @returns Temporary state object that holds data needed for parsing this YAML file only.
  */
-function initTempState(filepath, options) {
+function initTempState(path$1, options) {
     var _a;
     const basePath = (_a = options === null || options === void 0 ? void 0 : options.basePath) !== null && _a !== void 0 ? _a : process.cwd();
     return {
@@ -3068,7 +3083,7 @@ function initTempState(filepath, options) {
         },
         errors: [],
         importedErrors: [],
-        resolvedPath: path.resolve(basePath, filepath),
+        resolvedPath: path.resolve(basePath, path$1),
         filename: "",
         range: [0, 0],
         anchors: new Map(),
@@ -3082,10 +3097,7 @@ function initTempState(filepath, options) {
  * @param state - State object that holds data and cache needed to be presisted along parses of different YAML files.
  * @param tempState - Temporary state object that holds data needed for parsing this YAML file only.
  */
-async function handleImports(state, tempState) {
-    const cache = state.cache.get(tempState.resolvedPath);
-    if (!cache)
-        return; // should never fire
+async function handleImports(state, tempState, cache) {
     const imports = getAllImports(cache.directives.import, true);
     for (const i of imports) {
         const params = i.defaultParams;
@@ -3135,12 +3147,16 @@ class LiveParser {
         // add path as entry point
         this.state.dependency.addDep(path, true);
         // check cache, if present return directly
-        const cached = getParseEntery(this.state, path, this._options.universalParams);
-        if (cached)
-            return {
-                ...cached,
-                state: this._options.returnState ? this.state : undefined,
-            };
+        const cache = getModuleCache(this.state, path);
+        if (cache) {
+            const parseEntery = getParseEntery(cache, this._options.universalParams);
+            if (parseEntery)
+                return {
+                    ...parseEntery,
+                    state: this._options.returnState ? this.state : undefined,
+                    cache: this._options.returnState ? cache : undefined,
+                };
+        }
         // parse and return value
         return await parseExtend(path, this._options, this.state);
     }

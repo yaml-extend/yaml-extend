@@ -147,34 +147,29 @@ export function setParseEntery(
 /**
  * Function to get cache of specific YAML file from state.
  * @param state - State object from first parse if this YAML file is imported.
- * @param filepath - Path of YAML file in filesystem.
+ * @param path - Path of YAML file in filesystem.
  * @returns
  */
 export function getModuleCache(
   state: ParseState,
-  filepath: string
+  path: string
 ): ModuleCache | undefined {
-  return state.cache.get(filepath);
+  return state.cache.get(path);
 }
 
 /**
  * Function to get parse entery for specific YAML file with specific params value.
- * @param state - State object from first parse if this YAML file is imported.
- * @param filepath - Path of YAML file in filesystem.
+ * @param cache - Cache of the module.
  * @param params - All params passed to parseExtend during parsing YAML file, includes 'params' and 'universalParams' in options.
  * @returns
  */
 export function getParseEntery(
-  state: ParseState,
-  filepath: string,
+  cache: ModuleCache,
   params: Record<string, unknown> | undefined
 ): ParseEntry | undefined {
-  const moduleCache = state.cache.get(filepath);
-  if (!moduleCache) return;
-
   // hash params and get cache of this load with params
   const hashedParams = hashParams(params ?? {});
-  return moduleCache.parseCache.get(hashedParams);
+  return cache.parseCache.get(hashedParams);
 }
 
 /**

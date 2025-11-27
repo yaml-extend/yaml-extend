@@ -1910,8 +1910,10 @@ function readQuotedPath(state, tempState, parentTok) {
         quoted: true,
         linePos,
         pos,
+        isBase: state.baseDefined ? false : true,
     };
     tokens.push(tok);
+    state.baseDefined = true; // set baseDefined to true so only first path is defined as base
     return tokens;
 }
 function readPath(state, tempState, parentTok) {
@@ -1958,8 +1960,10 @@ function readPath(state, tempState, parentTok) {
         quoted: false,
         linePos,
         pos,
+        isBase: state.baseDefined ? false : true,
     };
     tokens.push(tok);
+    state.baseDefined = true; // set baseDefined to true so only first path is defined as base
     return tokens;
 }
 function initExprTokenState(input) {
@@ -1969,6 +1973,7 @@ function initExprTokenState(input) {
         pos: 0,
         line: 0,
         absLineStart: 0,
+        baseDefined: false,
         afterParen: false,
         afterWhiteSpace: false,
     };

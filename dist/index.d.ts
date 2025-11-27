@@ -165,6 +165,7 @@ type TextTokenizerState = BasicState;
  * State of expression step of scalar tokenizer
  */
 type ExprTokenizerState = BasicState & {
+    baseDefined: boolean;
     afterParen: boolean;
     afterWhiteSpace: boolean;
 };
@@ -233,6 +234,7 @@ type ExprToken = RawToken<string> & {
     argsTokens?: ArgsToken[];
     argsMarkOpen?: RawToken<string>;
     argsMarkClose?: RawToken<string>;
+    isBase?: boolean;
 };
 /**
  * Arguments token from arguments step of scalar tokenizer

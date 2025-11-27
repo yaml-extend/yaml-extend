@@ -261,8 +261,10 @@ function readQuotedPath(
     quoted: true,
     linePos,
     pos,
+    isBase: state.baseDefined ? false : true,
   };
   tokens.push(tok);
+  state.baseDefined = true; // set baseDefined to true so only first path is defined as base
   return tokens;
 }
 
@@ -316,8 +318,10 @@ function readPath(
     quoted: false,
     linePos,
     pos,
+    isBase: state.baseDefined ? false : true,
   };
   tokens.push(tok);
+  state.baseDefined = true; // set baseDefined to true so only first path is defined as base
   return tokens;
 }
 
@@ -328,6 +332,7 @@ function initExprTokenState(input: string): ExprTokenizerState {
     pos: 0,
     line: 0,
     absLineStart: 0,
+    baseDefined: false,
     afterParen: false,
     afterWhiteSpace: false,
   };

@@ -91,8 +91,9 @@ async function resolveScalar(
   tempState: TempParseState
 ): Promise<unknown> {
   // update range
-  if (scalar.range) tempState.range = [scalar.range[0], scalar.range[1]];
-  else tempState.range = [0, 99999];
+  if (!anchored)
+    if (scalar.range) tempState.range = [scalar.range[0], scalar.range[1]];
+    else tempState.range = [0, 99999];
   // Detect circular dependency
   if (anchored && !scalar.resolved) {
     tempState.errors.push(
@@ -132,8 +133,9 @@ async function resolveMap(
   tempState: TempParseState
 ): Promise<unknown> {
   // update range
-  if (map.range) tempState.range = [map.range[0], map.range[1]];
-  else tempState.range = [0, 99999];
+  if (!anchored)
+    if (map.range) tempState.range = [map.range[0], map.range[1]];
+    else tempState.range = [0, 99999];
   // var to hold out value
   if (anchored && !map.resolved) {
     tempState.errors.push(
@@ -167,8 +169,9 @@ async function resolveSeq(
   tempState: TempParseState
 ) {
   // update range
-  if (seq.range) tempState.range = [seq.range[0], seq.range[1]];
-  else tempState.range = [0, 99999];
+  if (!anchored)
+    if (seq.range) tempState.range = [seq.range[0], seq.range[1]];
+    else tempState.range = [0, 99999];
   // check resolve status
   if (anchored && !seq.resolved) {
     tempState.errors.push(
@@ -281,7 +284,7 @@ function filterPrivate(
       if (!isRecord(node)) {
         // create error
         const error = new YAMLExprError(
-          [token.pos.start, token.pos.end],
+          [token.pos[0], token.pos[1]],
           "",
           `Path: ${pathStr} is not present in target YAML tree.`
         );

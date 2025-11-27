@@ -39,7 +39,7 @@ export async function handleImport(
     if (!verified) {
       tempState.errors.push(
         new YAMLExprError(
-          [ctx.textToken.pos.start, ctx.textToken.pos.end],
+          ctx.textToken.pos,
           "",
           `Type mis-match, value used is not of type: ${ctx.type.type}.`
         )

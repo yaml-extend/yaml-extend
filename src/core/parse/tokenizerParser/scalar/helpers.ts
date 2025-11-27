@@ -58,7 +58,7 @@ export async function traverseNodes(
       const pathStr = paths.map((p) => p.path).join(".");
       tempState.errors.push(
         new YAMLExprError(
-          [tok.pos.start, tok.pos.end],
+          tok.pos,
           "",
           `Path: ${pathStr} is not present in target YAML tree.`
         )

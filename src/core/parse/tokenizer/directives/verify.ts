@@ -21,7 +21,7 @@ export function verifyFilename(
   const filename = dir.filename?.value;
   if (!filename) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass a scalar after %FILENAME directive."
     );
@@ -33,7 +33,7 @@ export function verifyFilename(
   // verify only one valid FILENAME directive is used
   if (directives.filename.some((d) => d.valid)) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "Only one FILENAME directive can be defined, first one defined will be used."
     );
@@ -55,7 +55,7 @@ export function verifyImport(
   const alias = dir.alias?.value;
   if (!alias) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass alias to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...]."
     );
@@ -67,7 +67,7 @@ export function verifyImport(
   // make sure that alias is used only once
   if (directives.import.some((d) => d.alias!.value === alias)) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "Alias for each IMPORT directive should be unique, this alias is used before."
     );
@@ -80,7 +80,7 @@ export function verifyImport(
   const path = dir.path?.value;
   if (!path) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass path to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...]."
     );
@@ -98,11 +98,7 @@ export function verifyImport(
         : validPath.error === "yamlFile"
         ? "path extension is not '.yaml' or '.yml'"
         : "path doesn't exist on filesystem";
-    const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
-      "",
-      `Invalid path, ${message}`
-    );
+    const error = new YAMLExprError(dir.pos, "", `Invalid path, ${message}`);
     dir.errors.push(error);
     dir.valid = false;
     directives.errors.push(error);
@@ -121,7 +117,7 @@ export function verifyLocal(
   const alias = dir.alias?.value;
   if (!alias) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass alias to '%LOCAL' directive, structure of LOCAL directive: %LOCAL <alias> <type> <defValue>."
     );
@@ -133,7 +129,7 @@ export function verifyLocal(
   // make sure that alias is used only once
   if (directives.import.some((d) => d.alias?.value === alias)) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "Alias for each LOCAL directive should be unique, this alias is used before."
     );
@@ -150,7 +146,7 @@ export function verifyLocal(
       (type !== "scalar" && type !== "map" && type !== "seq"))
   ) {
     const error = new YAMLExprError(
-      [dir.yamlType!.pos.start, dir.yamlType!.pos.end],
+      dir.yamlType!.pos,
       "",
       "Invalid type, type can only be 'scalar', 'map' or 'seq'."
     );
@@ -171,7 +167,7 @@ export function verifyParam(
   const alias = dir.alias?.value;
   if (!alias) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass alias to '%PARAM' directive, structure of PARAM directive: %PARAM <alias> <type> <defValue>."
     );
@@ -183,7 +179,7 @@ export function verifyParam(
   // make sure that alias is used only once
   if (directives.param.some((d) => d.alias?.value === alias)) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "Alias for each PARAM directive should be unique, this alias is used before."
     );
@@ -200,7 +196,7 @@ export function verifyParam(
       (type !== "scalar" && type !== "map" && type !== "seq"))
   ) {
     const error = new YAMLExprError(
-      [dir.yamlType!.pos.start, dir.yamlType!.pos.end],
+      dir.yamlType!.pos,
       "",
       "Invalid type, type can only be 'scalar', 'map' or 'seq'."
     );
@@ -231,7 +227,7 @@ export function verifyTag(
   const handle = dir.handle?.value;
   if (!handle) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass handle to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>."
     );
@@ -243,7 +239,7 @@ export function verifyTag(
   // make sure that handle is used only once
   if (directives.tag.some((d) => d.handle?.value === handle)) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "Handle for each TAG directive should be unique, this handle is used before."
     );
@@ -256,7 +252,7 @@ export function verifyTag(
   const prefix = dir.prefix?.value;
   if (!prefix) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass prefix to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>."
     );
@@ -278,7 +274,7 @@ export function verifyVersion(
   const version = dir.version?.value;
   if (!version) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "You should pass version to '%YAML' directive, structure of YAML directive: %YAML <version>."
     );
@@ -290,7 +286,7 @@ export function verifyVersion(
   // verify only one valid FILENAME directive is used
   if (directives.version.some((d) => d.valid)) {
     const error = new YAMLExprError(
-      [dir.pos.start, dir.pos.end],
+      dir.pos,
       "",
       "Only one YAML directive can be defined, first one defined will be used."
     );
@@ -305,7 +301,7 @@ export function verifyVersion(
 
     if (numVersion !== 1.1 && numVersion !== 1.2) {
       const error = new YAMLExprError(
-        [dir.pos.start, dir.pos.end],
+        dir.pos,
         "",
         "Invalid version value, valid values are 1.1 or 1.2."
       );

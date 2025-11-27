@@ -13,6 +13,7 @@ import {
   YAMLParseError as OrigYAMLParseError,
   YAMLWarning as OrigYAMLWarning,
 } from "yaml";
+import { LinePos } from "../tokenizer/tokenizerTypes.js";
 
 /////////////////////////////////////////////////////////////////////////
 // Internal functions only to interact with cache
@@ -88,7 +89,7 @@ function handleAST(tempState: TempParseState) {
       error = new YAMLWarning(e.pos, e.code, e.message);
     if (error) {
       error.cause = e.cause;
-      error.linePos = e.linePos;
+      error.linePos = e.linePos as [LinePos, LinePos];
       error.name = e.name;
       error.stack = e.stack;
       tempState.errors.push(error);

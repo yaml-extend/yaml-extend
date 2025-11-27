@@ -1,4 +1,4 @@
-import { ExtendLinePos } from "../tokenizer/tokenizerTypes.js";
+import { LinePos } from "../tokenizer/tokenizerTypes.js";
 import { createHash } from "crypto";
 
 /**
@@ -84,68 +84,63 @@ export function stringify(value: unknown, preserveNull?: boolean): string {
 }
 
 export function getLineStarts(str: string): number[] {
-  const starts: number[] = [];
-  let i = 0;
-  while (i < str.length) {
-    if (str[i] === "\n") starts.push(i);
-    i++;
+  const starts: number[] = [0];
+  for (let i = 0; i < str.length; i++) {
+    if (str[i] === "\n") {
+      // next character (i+1) is the start of the following line
+      starts.push(i + 1);
+    }
   }
   return starts;
 }
 
 /**
- * Find the rightmost element strictly less than `target` in a sorted ascending array.
- * @param arr Sorted ascending array of numbers.
- * @param target The number to compare against.
- * @returns { index, value } of the closest lower element, or null if none exists.
+ * Return line and column (both 0-based) from absolute position in text.
+ * @param lineStarts - Sorted ascending array of line start absolute positions (from getLineStarts).
+ * @param absPosition - absolute index into the string (0 .. str.length). Must be integer.
+ * @returns { line, col } of absolute position, or null if out of range.
  */
-function binarySearchLine(
-  arr: number[],
-  target: number
-): { line: number; absolutePos: number } | null {
+export function binarySearchLine(
+  lineStarts: number[],
+  absPosition: number
+): { line: number; col: number } | null {
+  if (!Number.isInteger(absPosition) || absPosition < 0) return null;
+  if (lineStarts.length === 0) return null;
+
+  // If absPosition is beyond last possible position (e.g. > last char index),
+  // you can treat it as invalid or allow absPosition === str.length (end-of-file).
+  // Here we accept absPosition up to Infinity but rely on lineStarts to drive results.
+
   let low = 0;
-  let high = arr.length - 1;
+  let high = lineStarts.length - 1;
   let resultIndex = -1;
 
   while (low <= high) {
     const mid = low + ((high - low) >> 1);
-    if (arr[mid] < target) {
-      // arr[mid] is a candidate; move right to find a closer (larger) candidate
+    if (lineStarts[mid] <= absPosition) {
+      // candidate (<=) so move right to find closer (larger) candidate
       resultIndex = mid;
       low = mid + 1;
     } else {
-      // arr[mid] >= target, we need strictly smaller => search left half
+      // lineStarts[mid] > absPosition -> search left half
       high = mid - 1;
     }
   }
 
   if (resultIndex === -1) return null;
-  return { line: resultIndex + 1, absolutePos: arr[resultIndex] };
+
+  const line = resultIndex;
+  const col = absPosition - lineStarts[line];
+
+  return { line, col };
 }
 
 export function getLinePosFromRange(
-  str: string,
   lineStarts: number[],
   range: [number, number]
-): ExtendLinePos[] {
-  const start = range[0];
-  const end = range[1];
-  const search = binarySearchLine(lineStarts, start);
-  if (!search) return [];
-  let i = start;
-  let line = search.line;
-  let lineStart = start - search.absolutePos;
-  let linePos: ExtendLinePos[] = [];
-  while (i < str.length && i <= end) {
-    if (str[i] === "\n") {
-      if (i >= start)
-        linePos.push({ start: lineStart, end: i - lineStart, line: line });
-      line += 1;
-      lineStart = 0;
-    }
-    i++;
-  }
-  linePos.push({ start: lineStart, end: i - lineStart, line });
-
-  return linePos;
+): [LinePos, LinePos] | undefined {
+  const start = binarySearchLine(lineStarts, range[0]);
+  const end = binarySearchLine(lineStarts, range[1]);
+  if (start == null || end == null) return;
+  return [start, end];
 }

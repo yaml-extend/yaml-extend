@@ -7,7 +7,6 @@ import {
   mergeScalarPosition,
   readUntilClose,
   read,
-  handleLinePos,
   readUntilChar,
 } from "./helpers.js";
 import { tokenizeExpr } from "./expression.js";
@@ -16,30 +15,40 @@ import {
   TextTokenType,
   type TextTokenizerState,
   type KeyValueToken,
+  Pos,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
+import { getLinePosFromRange } from "../../utils/random.js";
 
 // main function
 export function tokenizeText(
   input: string,
   keyValueTok: KeyValueToken | undefined,
-  tempState?: TempParseState
+  tempState: TempParseState,
+  depth: number = 0
 ): TextToken[] {
   // handle tokens
   let state = initTextTokenizerState(input);
   let tokens: TextToken[] = [];
   while (true) {
-    const toks = nextTextToken(state);
+    const toks = nextTextToken(state, tempState, keyValueTok, depth);
     tokens.push(...toks);
-    if (tempState) for (const t of toks) mergeScalarPosition(t, tempState);
-    if (keyValueTok) for (const t of toks) mergeTokenPosition(t, keyValueTok);
     if (tokens[tokens.length - 1].type === TextTokenType.EOF) break;
   }
+
+  // increment depth
+  depth++;
 
   // tokenize expression inside EXPR tokens
   for (const t of tokens)
     if (t.type === TextTokenType.EXPR)
-      t.exprTokens = tokenizeExpr(t.raw ? t.raw : "", t, tokenizeText);
+      t.exprTokens = tokenizeExpr(
+        t.raw ? t.raw : "",
+        t,
+        tempState,
+        depth,
+        tokenizeText
+      );
 
   // return
   return tokens;
@@ -48,7 +57,12 @@ export function tokenizeText(
 export type TokenizeTextFunc = typeof tokenizeText;
 
 // function to get next token
-function nextTextToken(state: TextTokenizerState): TextToken[] {
+function nextTextToken(
+  state: TextTokenizerState,
+  tempState: TempParseState,
+  parentTok: KeyValueToken | undefined,
+  depth: number
+): TextToken[] {
   // get current character
   const ch = current(state);
 
@@ -58,7 +72,10 @@ function nextTextToken(state: TextTokenizerState): TextToken[] {
   // if eof reutnr last token
   if (eof(state)) {
     const start = state.pos;
-    const linePos = handleLinePos(state, start);
+    const pos: Pos = [start, state.pos];
+    if (depth === 0) mergeScalarPosition(pos, tempState);
+    if (parentTok) mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok: TextToken = {
       type: TextTokenType.EOF,
       raw: "",
@@ -66,7 +83,9 @@ function nextTextToken(state: TextTokenizerState): TextToken[] {
       value: "",
       quoted: false,
       linePos,
-      pos: { start, end: state.pos },
+      pos,
+      freeExpr: false,
+      depth,
     };
     tokens.push(tok);
     return tokens;
@@ -78,17 +97,22 @@ function nextTextToken(state: TextTokenizerState): TextToken[] {
     state.pos = advance(state, 2);
     // loop until "}" mark
     const start = state.pos;
-    const { raw, text, linePos } = readUntilClose(state, start, "${", "}");
+    const { raw, text } = readUntilClose(state, start, "${", "}");
     const value = text;
+    const pos: Pos = [start, state.pos];
+    if (depth === 0) mergeScalarPosition(pos, tempState);
+    if (parentTok) mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok: TextToken = {
       type: TextTokenType.EXPR,
       raw,
       text,
       value,
       quoted: false,
-      linePos: linePos,
-      pos: { start, end: state.pos },
+      linePos,
+      pos,
       freeExpr: false,
+      depth,
     };
     tokens.push(tok);
     // skip "}"
@@ -102,17 +126,22 @@ function nextTextToken(state: TextTokenizerState): TextToken[] {
     state.pos = advance(state);
     // handle expr token (read until end of the input)
     const start = state.pos;
-    const { raw, text, linePos } = read(state, start, Infinity);
+    const { raw, text } = read(state, start, Infinity);
     const value = text;
+    const pos: Pos = [start, state.pos];
+    if (depth === 0) mergeScalarPosition(pos, tempState);
+    if (parentTok) mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const exprTok: TextToken = {
       type: TextTokenType.EXPR,
       raw,
       text,
       value,
       quoted: false,
-      linePos: linePos,
-      pos: { start, end: state.pos },
+      linePos,
+      pos,
       freeExpr: true,
+      depth,
     };
     tokens.push(exprTok);
     return tokens;
@@ -120,8 +149,12 @@ function nextTextToken(state: TextTokenizerState): TextToken[] {
 
   // read until first interpolation mark "${"
   const start = state.pos;
-  const { raw, text, linePos } = readUntilChar(state, start, "${", true);
+  const { raw, text } = readUntilChar(state, start, "${", true);
   const value = text;
+  const pos: Pos = [start, state.pos];
+  if (depth === 0) mergeScalarPosition(pos, tempState);
+  if (parentTok) mergeTokenPosition(pos, parentTok);
+  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const textTok: TextToken = {
     type: TextTokenType.TEXT,
     raw,
@@ -129,7 +162,9 @@ function nextTextToken(state: TextTokenizerState): TextToken[] {
     value,
     quoted: false,
     linePos,
-    pos: { start, end: state.pos },
+    pos,
+    freeExpr: false,
+    depth,
   };
   tokens.push(textTok);
   return tokens;

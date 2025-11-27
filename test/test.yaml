@@ -8,14 +8,12 @@ nameFac: $local.name
 data:
   feild1: value1
   feild2: value2
-
 person1:
   name: $this.nameFac(name=ahmed) as scalar
   test2: $import.test2.node(
     work = hero,
     data = $this.data
     )
-
 errorNode: $this.person2
 
 person2:

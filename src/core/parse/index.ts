@@ -128,7 +128,7 @@ export async function parseExtend(
     for (const e of ts.errors) {
       e.filename = ts.filename;
       e.path = ts.resolvedPath;
-      e.extendLinePos = getLinePosFromRange(ts.source, ts.lineStarts, e.pos);
+      e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
       e.message =
         e.message +
         ` This error occured in file: ${

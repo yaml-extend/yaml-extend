@@ -11,7 +11,6 @@ class YAMLError extends YAMLError$1 {
         // @ts-ignore
         super(name, pos, code, message);
         this.path = "";
-        this.extendLinePos = [];
         this.filename = "";
     }
 }
@@ -194,62 +193,56 @@ function stringify(value, preserveNull) {
     return JSON.stringify(value);
 }
 function getLineStarts(str) {
-    const starts = [];
-    let i = 0;
-    while (i < str.length) {
-        if (str[i] === "\n")
-            starts.push(i);
-        i++;
+    const starts = [0];
+    for (let i = 0; i < str.length; i++) {
+        if (str[i] === "\n") {
+            // next character (i+1) is the start of the following line
+            starts.push(i + 1);
+        }
     }
     return starts;
 }
 /**
- * Find the rightmost element strictly less than `target` in a sorted ascending array.
- * @param arr Sorted ascending array of numbers.
- * @param target The number to compare against.
- * @returns { index, value } of the closest lower element, or null if none exists.
+ * Return line and column (both 0-based) from absolute position in text.
+ * @param lineStarts - Sorted ascending array of line start absolute positions (from getLineStarts).
+ * @param absPosition - absolute index into the string (0 .. str.length). Must be integer.
+ * @returns { line, col } of absolute position, or null if out of range.
  */
-function binarySearchLine(arr, target) {
+function binarySearchLine(lineStarts, absPosition) {
+    if (!Number.isInteger(absPosition) || absPosition < 0)
+        return null;
+    if (lineStarts.length === 0)
+        return null;
+    // If absPosition is beyond last possible position (e.g. > last char index),
+    // you can treat it as invalid or allow absPosition === str.length (end-of-file).
+    // Here we accept absPosition up to Infinity but rely on lineStarts to drive results.
     let low = 0;
-    let high = arr.length - 1;
+    let high = lineStarts.length - 1;
     let resultIndex = -1;
     while (low <= high) {
         const mid = low + ((high - low) >> 1);
-        if (arr[mid] < target) {
-            // arr[mid] is a candidate; move right to find a closer (larger) candidate
+        if (lineStarts[mid] <= absPosition) {
+            // candidate (<=) so move right to find closer (larger) candidate
             resultIndex = mid;
             low = mid + 1;
         }
         else {
-            // arr[mid] >= target, we need strictly smaller => search left half
+            // lineStarts[mid] > absPosition -> search left half
             high = mid - 1;
         }
     }
     if (resultIndex === -1)
         return null;
-    return { line: resultIndex + 1, absolutePos: arr[resultIndex] };
+    const line = resultIndex;
+    const col = absPosition - lineStarts[line];
+    return { line, col };
 }
-function getLinePosFromRange(str, lineStarts, range) {
-    const start = range[0];
-    const end = range[1];
-    const search = binarySearchLine(lineStarts, start);
-    if (!search)
-        return [];
-    let i = start;
-    let line = search.line;
-    let lineStart = start - search.absolutePos;
-    let linePos = [];
-    while (i < str.length && i <= end) {
-        if (str[i] === "\n") {
-            if (i >= start)
-                linePos.push({ start: lineStart, end: i - lineStart, line: line });
-            line += 1;
-            lineStart = 0;
-        }
-        i++;
-    }
-    linePos.push({ start: lineStart, end: i - lineStart, line });
-    return linePos;
+function getLinePosFromRange(lineStarts, range) {
+    const start = binarySearchLine(lineStarts, range[0]);
+    const end = binarySearchLine(lineStarts, range[1]);
+    if (start == null || end == null)
+        return;
+    return [start, end];
 }
 
 /**
@@ -292,14 +285,14 @@ function verifyFilename(dir, directives) {
     // verify filename
     const filename = (_a = dir.filename) === null || _a === void 0 ? void 0 : _a.value;
     if (!filename) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass a scalar after %FILENAME directive.");
+        const error = new YAMLExprError(dir.pos, "", "You should pass a scalar after %FILENAME directive.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
     }
     // verify only one valid FILENAME directive is used
     if (directives.filename.some((d) => d.valid)) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Only one FILENAME directive can be defined, first one defined will be used.");
+        const error = new YAMLExprError(dir.pos, "", "Only one FILENAME directive can be defined, first one defined will be used.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -313,14 +306,14 @@ function verifyImport(dir, directives, tempState) {
     // make sure that alias is used
     const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
     if (!alias) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass alias to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...].");
+        const error = new YAMLExprError(dir.pos, "", "You should pass alias to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...].");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
     }
     // make sure that alias is used only once
     if (directives.import.some((d) => d.alias.value === alias)) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Alias for each IMPORT directive should be unique, this alias is used before.");
+        const error = new YAMLExprError(dir.pos, "", "Alias for each IMPORT directive should be unique, this alias is used before.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -328,7 +321,7 @@ function verifyImport(dir, directives, tempState) {
     // make sure that path is used
     const path = (_b = dir.path) === null || _b === void 0 ? void 0 : _b.value;
     if (!path) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass path to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...].");
+        const error = new YAMLExprError(dir.pos, "", "You should pass path to '%IMPORT' directive, structure of IMPORT directive: %IMPORT <alias> <path> [key=value ...].");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -341,7 +334,7 @@ function verifyImport(dir, directives, tempState) {
             : validPath.error === "yamlFile"
                 ? "path extension is not '.yaml' or '.yml'"
                 : "path doesn't exist on filesystem";
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", `Invalid path, ${message}`);
+        const error = new YAMLExprError(dir.pos, "", `Invalid path, ${message}`);
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -357,14 +350,14 @@ function verifyLocal(dir, directives) {
     // make sure that alias is used
     const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
     if (!alias) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass alias to '%LOCAL' directive, structure of LOCAL directive: %LOCAL <alias> <type> <defValue>.");
+        const error = new YAMLExprError(dir.pos, "", "You should pass alias to '%LOCAL' directive, structure of LOCAL directive: %LOCAL <alias> <type> <defValue>.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
     }
     // make sure that alias is used only once
     if (directives.import.some((d) => { var _a; return ((_a = d.alias) === null || _a === void 0 ? void 0 : _a.value) === alias; })) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Alias for each LOCAL directive should be unique, this alias is used before.");
+        const error = new YAMLExprError(dir.pos, "", "Alias for each LOCAL directive should be unique, this alias is used before.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -374,7 +367,7 @@ function verifyLocal(dir, directives) {
     if (type &&
         (typeof type !== "string" ||
             (type !== "scalar" && type !== "map" && type !== "seq"))) {
-        const error = new YAMLExprError([dir.yamlType.pos.start, dir.yamlType.pos.end], "", "Invalid type, type can only be 'scalar', 'map' or 'seq'.");
+        const error = new YAMLExprError(dir.yamlType.pos, "", "Invalid type, type can only be 'scalar', 'map' or 'seq'.");
         dir.errors.push(error);
         directives.errors.push(error);
         dir.yamlType.value = undefined;
@@ -388,14 +381,14 @@ function verifyParam(dir, directives) {
     // make sure that alias is used
     const alias = (_a = dir.alias) === null || _a === void 0 ? void 0 : _a.value;
     if (!alias) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass alias to '%PARAM' directive, structure of PARAM directive: %PARAM <alias> <type> <defValue>.");
+        const error = new YAMLExprError(dir.pos, "", "You should pass alias to '%PARAM' directive, structure of PARAM directive: %PARAM <alias> <type> <defValue>.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
     }
     // make sure that alias is used only once
     if (directives.param.some((d) => { var _a; return ((_a = d.alias) === null || _a === void 0 ? void 0 : _a.value) === alias; })) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Alias for each PARAM directive should be unique, this alias is used before.");
+        const error = new YAMLExprError(dir.pos, "", "Alias for each PARAM directive should be unique, this alias is used before.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -405,7 +398,7 @@ function verifyParam(dir, directives) {
     if (type &&
         (typeof type !== "string" ||
             (type !== "scalar" && type !== "map" && type !== "seq"))) {
-        const error = new YAMLExprError([dir.yamlType.pos.start, dir.yamlType.pos.end], "", "Invalid type, type can only be 'scalar', 'map' or 'seq'.");
+        const error = new YAMLExprError(dir.yamlType.pos, "", "Invalid type, type can only be 'scalar', 'map' or 'seq'.");
         dir.errors.push(error);
         directives.errors.push(error);
         dir.yamlType.value = undefined;
@@ -425,14 +418,14 @@ function verifyTag(dir, directives) {
     // make sure that handle is used
     const handle = (_a = dir.handle) === null || _a === void 0 ? void 0 : _a.value;
     if (!handle) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass handle to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>.");
+        const error = new YAMLExprError(dir.pos, "", "You should pass handle to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
     }
     // make sure that handle is used only once
     if (directives.tag.some((d) => { var _a; return ((_a = d.handle) === null || _a === void 0 ? void 0 : _a.value) === handle; })) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Handle for each TAG directive should be unique, this handle is used before.");
+        const error = new YAMLExprError(dir.pos, "", "Handle for each TAG directive should be unique, this handle is used before.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -440,7 +433,7 @@ function verifyTag(dir, directives) {
     // make sure that prefix is used
     const prefix = (_b = dir.prefix) === null || _b === void 0 ? void 0 : _b.value;
     if (!prefix) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass prefix to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>.");
+        const error = new YAMLExprError(dir.pos, "", "You should pass prefix to '%TAG' directive, structure of TAG directive: %TAG <handle> <prefix>.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -456,14 +449,14 @@ function verifyVersion(dir, directives) {
     // make sure that version is used
     const version = (_a = dir.version) === null || _a === void 0 ? void 0 : _a.value;
     if (!version) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "You should pass version to '%YAML' directive, structure of YAML directive: %YAML <version>.");
+        const error = new YAMLExprError(dir.pos, "", "You should pass version to '%YAML' directive, structure of YAML directive: %YAML <version>.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
     }
     // verify only one valid FILENAME directive is used
     if (directives.version.some((d) => d.valid)) {
-        const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Only one YAML directive can be defined, first one defined will be used.");
+        const error = new YAMLExprError(dir.pos, "", "Only one YAML directive can be defined, first one defined will be used.");
         dir.errors.push(error);
         dir.valid = false;
         directives.errors.push(error);
@@ -472,7 +465,7 @@ function verifyVersion(dir, directives) {
     if (version) {
         const numVersion = Number(version);
         if (numVersion !== 1.1 && numVersion !== 1.2) {
-            const error = new YAMLExprError([dir.pos.start, dir.pos.end], "", "Invalid version value, valid values are 1.1 or 1.2.");
+            const error = new YAMLExprError(dir.pos, "", "Invalid version value, valid values are 1.1 or 1.2.");
             dir.errors.push(error);
             dir.valid = false;
             directives.errors.push(error);
@@ -486,7 +479,7 @@ function verifyVersion(dir, directives) {
  * Tokenize a single directive line (line must start with `%`).
  * Each token includes start/end indices in the original line.
  */
-function tokenizeDirLine(line, lineNum, strIdx) {
+function tokenizeDirLine(line, strIdx, tempState) {
     if (!line || !line.startsWith("%"))
         return [];
     const n = line.length;
@@ -506,16 +499,15 @@ function tokenizeDirLine(line, lineNum, strIdx) {
             text = unescapeQuoted(inner, quoteChar);
         }
         const value = getValueFromText(text);
+        const pos = [strIdx + start, strIdx + end];
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         tokens.push({
             raw,
             text,
             quoted,
             value,
-            linePos: [{ start, end, line: lineNum }],
-            pos: {
-                start: strIdx + start,
-                end: strIdx + end,
-            },
+            linePos,
+            pos,
         });
     };
     // read directive name (skip whitespace then read until whitespace)
@@ -718,8 +710,8 @@ function findTopLevelEquals(s) {
 /**
  * Helper: build a RawToken for a slice inside an existing token (preserves line number).
  */
-function buildInnerRawToken(parentTok, absStart, absEnd) {
-    const raw = parentTok.raw.slice(absStart - parentTok.pos.start, absEnd - parentTok.pos.start);
+function buildInnerRawToken(parentTok, absStart, absEnd, tempState) {
+    const raw = parentTok.raw.slice(absStart - parentTok.pos[0], absEnd - parentTok.pos[0]);
     let quoted = false;
     let text = raw;
     if (raw &&
@@ -731,34 +723,28 @@ function buildInnerRawToken(parentTok, absStart, absEnd) {
         text = unescapeQuoted(inner, raw[0]);
     }
     const value = getValueFromText(text);
-    const line = parentTok.linePos && parentTok.linePos.length > 0
-        ? parentTok.linePos[0].line
-        : 0;
+    const pos = [absStart, absEnd];
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     return {
         raw,
         text,
         value,
         quoted,
-        linePos: [{ start: absStart, end: absEnd, line }],
-        pos: {
-            start: absStart,
-            end: absEnd,
-        },
+        linePos,
+        pos,
     };
 }
 /**
  * Parse tokens for one directive line into a Directive object with positional spans.
  * Returns null if tokens are invalid/unknown directive.
  */
-function parseDirectiveFromTokens(tokens, rawLine, lineNum, strIdx) {
+function parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState) {
     var _a, _b;
     if (!tokens || tokens.length === 0)
         return null;
     // calc pos and linePos of the hole directive
-    const linePos = [
-        { start: 0, end: rawLine.length, line: lineNum },
-    ];
-    const pos = { start: strIdx, end: strIdx + rawLine.length };
+    const pos = [strIdx, strIdx + rawLine.length];
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     // handle baseTok
     const rawBaseTok = tokens[0];
     const baseTok = rawBaseTok;
@@ -821,13 +807,13 @@ function parseDirectiveFromTokens(tokens, rawLine, lineNum, strIdx) {
             for (let idx = 3; idx < tokens.length; idx++) {
                 const tok = tokens[idx];
                 if (paramsStart === null)
-                    paramsStart = tok.pos.start;
-                paramsEnd = tok.pos.end;
+                    paramsStart = tok.pos[0];
+                paramsEnd = tok.pos[1];
                 const raw = tok.raw === null ? "" : tok.raw;
                 const eqIndex = findTopLevelEquals(raw);
                 if (eqIndex === -1) {
                     // key only -> build a RawToken for the key (it's the whole token)
-                    const keyTok = buildInnerRawToken(tok, tok.pos.start, tok.pos.end);
+                    const keyTok = buildInnerRawToken(tok, tok.pos[0], tok.pos[1], tempState);
                     let keyText = keyTok.text;
                     params[keyText] = {
                         raw: raw,
@@ -840,13 +826,13 @@ function parseDirectiveFromTokens(tokens, rawLine, lineNum, strIdx) {
                     // key/value split where '=' is not inside quotes
                     const keyRawSlice = raw.slice(0, eqIndex);
                     const valRawSlice = raw.slice(eqIndex + 1);
-                    const keyStart = tok.pos.start;
-                    const keyEnd = tok.pos.start + eqIndex;
-                    const valueStart = tok.pos.start + eqIndex + 1;
-                    const valueEnd = tok.pos.end;
-                    const keyTok = buildInnerRawToken(tok, keyStart, keyEnd);
-                    const eqTok = buildInnerRawToken(tok, keyEnd, valueStart);
-                    const valueTok = buildInnerRawToken(tok, valueStart, valueEnd);
+                    const keyStart = tok.pos[0];
+                    const keyEnd = tok.pos[0] + eqIndex;
+                    const valueStart = tok.pos[0] + eqIndex + 1;
+                    const valueEnd = tok.pos[1];
+                    const keyTok = buildInnerRawToken(tok, keyStart, keyEnd, tempState);
+                    const eqTok = buildInnerRawToken(tok, keyEnd, valueStart, tempState);
+                    const valueTok = buildInnerRawToken(tok, valueStart, valueEnd, tempState);
                     const keyText = keyTok.text;
                     params[keyText] = {
                         raw: raw,
@@ -989,8 +975,8 @@ function tokenizeDirectives(text, tempState) {
     for (let idx = 0; idx < lines.length; idx++) {
         const rawLine = lines[idx];
         if (rawLine.startsWith("%")) {
-            const tokens = tokenizeDirLine(rawLine, idx, strIdx);
-            let dir = parseDirectiveFromTokens(tokens, rawLine, idx, strIdx);
+            const tokens = tokenizeDirLine(rawLine, strIdx, tempState);
+            let dir = parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState);
             if (dir) {
                 switch (dir.type) {
                     case "FILENAME":
@@ -1330,65 +1316,13 @@ function advance(state, n = 1) {
 function peek(state, n = 1) {
     return state.input.substr(state.pos, n);
 }
-// Function to handle line position
-function handleLinePos(state, start) {
-    let linePos = [];
-    let relLineStart = start - state.absLineStart;
-    let i = start;
-    while (i < state.pos) {
-        if (state.input[i] === "\n") {
-            linePos.push({
-                line: state.line,
-                start: relLineStart,
-                end: i - state.absLineStart,
-            });
-            relLineStart = 0;
-            state.line++;
-            state.absLineStart = i + 1;
-        }
-        i++;
-    }
-    linePos.push({
-        line: state.line,
-        start: relLineStart,
-        end: i - state.absLineStart,
-    });
-    return linePos;
+function mergeTokenPosition(pos, parentTok) {
+    pos[0] += parentTok.pos[0];
+    pos[1] += parentTok.pos[0];
 }
-function mergeTokenPosition(tok, parentTok) {
-    // add absolute start position of the parent
-    const parentStart = parentTok.pos.start;
-    tok.pos.start += parentStart;
-    tok.pos.end += parentStart;
-    // update line positions
-    for (let i = 0; i < tok.linePos.length; i++) {
-        const linePos = tok.linePos[i];
-        const parentLinePos = parentTok.linePos[linePos.line];
-        if (parentTok.linePos[0])
-            linePos.line += parentTok.linePos[0].line;
-        linePos.start += parentLinePos.start;
-        linePos.end += parentLinePos.start;
-    }
-}
-function mergeScalarPosition(tok, tempState) {
-    const start = tempState.range[0];
-    const end = tempState.range[1];
-    if (end === 99999)
-        return;
-    // add absolute start positions
-    tok.pos.start += start;
-    tok.pos.end += start;
-    // get line position of range
-    const parentLinePositions = getLinePosFromRange(tempState.source, tempState.lineStarts, [start, end]);
-    // update line positions
-    for (let i = 0; i < tok.linePos.length; i++) {
-        const linePos = tok.linePos[i];
-        const parentLinePos = parentLinePositions[linePos.line];
-        if (parentLinePositions[0])
-            linePos.line += parentLinePositions[0].line;
-        linePos.start += parentLinePos.start;
-        linePos.end += parentLinePos.start;
-    }
+function mergeScalarPosition(pos, tempState) {
+    pos[0] += tempState.range[0];
+    pos[1] += tempState.range[0];
 }
 function readUntilClose(state, start, openChar, closeChar, ignoreTextTrim) {
     var _a;
@@ -1429,17 +1363,15 @@ function readUntilClose(state, start, openChar, closeChar, ignoreTextTrim) {
         out += ch;
         state.pos = advance(state);
     }
-    const linePos = handleLinePos(state, start);
     const raw = state.input.slice(start, state.pos);
     const text = out.trim();
-    return { linePos, raw, text };
+    return { raw, text };
 }
 function read(state, start, steps, ignoreTextTrim) {
     state.pos = advance(state, steps);
-    const linePos = handleLinePos(state, start);
     const raw = state.input.slice(start, state.pos);
     const text = raw.trim();
-    return { linePos, raw, text };
+    return { raw, text };
 }
 function readUntilChar(state, start, stopChar, ignoreTextTrim) {
     var _a;
@@ -1475,10 +1407,9 @@ function readUntilChar(state, start, stopChar, ignoreTextTrim) {
         out += ch;
         state.pos = advance(state);
     }
-    const linePos = handleLinePos(state, start);
     const raw = state.input.slice(start, state.pos);
     const text = ignoreTextTrim ? out : out.trim();
-    return { linePos, raw, text };
+    return { raw, text };
 }
 
 /**
@@ -1523,27 +1454,25 @@ var KeyValueTokenType;
 })(KeyValueTokenType || (KeyValueTokenType = {}));
 
 // main function
-function tokenizeKeyValue(input, argsTok, tokenizeTextFunc) {
+function tokenizeKeyValue(input, argsTok, tempState, depth, tokenizeTextFunc) {
     var _a;
     // handle tokens
     let tokens = [];
     let state = initArgsTokenState$1(input);
     while (true) {
-        const toks = nextArgsToken$1(state);
+        const toks = nextArgsToken$1(state, tempState, argsTok);
         tokens.push(...toks);
-        for (const t of toks)
-            mergeTokenPosition(t, argsTok);
         if (((_a = tokens[tokens.length - 1]) === null || _a === void 0 ? void 0 : _a.type) === KeyValueTokenType.EOF)
             break;
     }
     // resolve any value tokens using text tokenizer
     for (const t of tokens)
         if (t.type === KeyValueTokenType.VALUE)
-            t.valueToks = tokenizeTextFunc(t.raw ? t.raw.trim() : "", t);
+            t.valueToks = tokenizeTextFunc(t.raw ? t.raw.trim() : "", t, tempState, depth);
     // return
     return tokens;
 }
-function nextArgsToken$1(state) {
+function nextArgsToken$1(state, tempState, parentTok) {
     // get current character
     const ch = current(state);
     // tokens array
@@ -1551,7 +1480,9 @@ function nextArgsToken$1(state) {
     // if eof reutnr last token
     if (eof(state)) {
         const start = state.pos;
-        const linePos = handleLinePos(state, start);
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: KeyValueTokenType.EOF,
             raw: "",
@@ -1559,38 +1490,45 @@ function nextArgsToken$1(state) {
             value: "",
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         return tokens;
     }
     if (ch === "=") {
         const start = state.pos;
-        const { raw, text, linePos } = read(state, start, 1);
+        const { raw, text } = read(state, start, 1);
+        const value = text;
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: KeyValueTokenType.EQUAL,
             raw,
             text,
-            value: text,
+            value,
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         state.afterEqual = true;
     }
     if (ch === '"' || ch === "'")
-        return readQuoted(state);
+        return readQuoted(state, tempState, parentTok);
     else
-        return readUnQuoted(state);
+        return readUnQuoted(state, tempState, parentTok);
 }
-function readQuoted(state) {
+function readQuoted(state, tempState, parentTok) {
     let tokens = [];
     const start = state.pos;
-    const { raw, text, linePos } = readUntilChar(state, start, current(state));
+    const { raw, text } = readUntilChar(state, start, current(state));
     if (!text)
         return tokens; // if only white space omit token
     const value = state.afterEqual ? getValueFromText(text) : text;
+    const pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
         type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
         raw,
@@ -1598,18 +1536,21 @@ function readQuoted(state) {
         value,
         quoted: true,
         linePos,
-        pos: { start, end: state.pos },
+        pos,
     };
     tokens.push(tok);
     return tokens;
 }
-function readUnQuoted(state) {
+function readUnQuoted(state, tempState, parentTok) {
     let tokens = [];
     const start = state.pos;
-    const { raw, text, linePos } = readUntilChar(state, start, ["=", ","]);
+    const { raw, text } = readUntilChar(state, start, ["=", ","]);
     if (!text)
         return tokens; // if only white space omit token
     const value = state.afterEqual ? getValueFromText(text) : text;
+    const pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
         type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
         raw,
@@ -1617,7 +1558,7 @@ function readUnQuoted(state) {
         value,
         quoted: false,
         linePos,
-        pos: { start, end: state.pos },
+        pos,
     };
     tokens.push(tok);
     return tokens;
@@ -1634,26 +1575,24 @@ function initArgsTokenState$1(input) {
 }
 
 // main function
-function tokenizeArgs(input, exprTok, tokenizeTextFunc) {
+function tokenizeArgs(input, exprTok, tempState, depth, tokenizeTextFunc) {
     // handle tokens
     let tokens = [];
     let state = initArgsTokenState(input);
     while (true) {
-        const toks = nextArgsToken(state);
+        const toks = nextArgsToken(state, tempState, exprTok);
         tokens.push(...toks);
-        for (const t of toks)
-            mergeTokenPosition(t, exprTok);
         if (tokens[tokens.length - 1].type === ArgsTokenType.EOF)
             break;
     }
     // resolve any value tokens using text tokenizer
     for (const t of tokens)
         if (t.type === ArgsTokenType.KEY_VALUE)
-            t.keyValueToks = tokenizeKeyValue(t.raw ? t.raw : "", t, tokenizeTextFunc);
+            t.keyValueToks = tokenizeKeyValue(t.raw ? t.raw : "", t, tempState, depth, tokenizeTextFunc);
     // return
     return tokens;
 }
-function nextArgsToken(state) {
+function nextArgsToken(state, tempState, parentTok) {
     // get current character
     const ch = current(state);
     // tokens array
@@ -1661,7 +1600,9 @@ function nextArgsToken(state) {
     // if eof reutnr last token
     if (eof(state)) {
         const start = state.pos;
-        const linePos = handleLinePos(state, start);
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: ArgsTokenType.EOF,
             raw: "",
@@ -1669,30 +1610,37 @@ function nextArgsToken(state) {
             value: "",
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         return tokens;
     }
     if (ch === ",") {
         const start = state.pos;
-        const { raw, text, linePos } = read(state, start, 1);
+        const { raw, text } = read(state, start, 1);
+        const value = text;
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: ArgsTokenType.COMMA,
             raw,
             text,
-            value: text,
+            value,
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         return tokens;
     }
     // handle KeyValue pair token
     const start = state.pos;
-    const { raw, text, linePos } = readUntilChar(state, start, ",");
+    const { raw, text } = readUntilChar(state, start, ",");
     const value = text;
+    const pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
         type: ArgsTokenType.KEY_VALUE,
         raw,
@@ -1700,7 +1648,7 @@ function nextArgsToken(state) {
         value,
         quoted: false,
         linePos,
-        pos: { start, end: state.pos },
+        pos,
     };
     tokens.push(tok);
     return tokens;
@@ -1716,26 +1664,24 @@ function initArgsTokenState(input) {
 }
 
 // main function
-function tokenizeExpr(input, textTok, tokenizeTextFunc) {
+function tokenizeExpr(input, textTok, tempState, depth, tokenizeTextFunc) {
     // handle tokens
     let tokens = [];
     let state = initExprTokenState(input);
     while (true) {
-        const toks = nextExprToken(state);
+        const toks = nextExprToken(state, tempState, textTok);
         tokens.push(...toks);
-        for (const t of toks)
-            mergeTokenPosition(t, textTok);
         if (tokens[tokens.length - 1].type === ExprTokenType.EOF)
             break;
     }
     // tokenize args inside ARGS token
     for (const t of tokens)
         if (t.type === ExprTokenType.ARGS)
-            t.argTokens = tokenizeArgs(t.raw ? t.raw : "", t, tokenizeTextFunc);
+            t.argTokens = tokenizeArgs(t.raw ? t.raw : "", t, tempState, depth, tokenizeTextFunc);
     // return
     return tokens;
 }
-function nextExprToken(state) {
+function nextExprToken(state, tempState, parentTok) {
     // get current character
     const ch = current(state);
     // tokens array
@@ -1743,7 +1689,9 @@ function nextExprToken(state) {
     // if eof reutnr last token
     if (eof(state)) {
         const start = state.pos;
-        const linePos = handleLinePos(state, start);
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: ExprTokenType.EOF,
             raw: "",
@@ -1751,7 +1699,7 @@ function nextExprToken(state) {
             value: "",
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         return tokens;
@@ -1759,7 +1707,10 @@ function nextExprToken(state) {
     // if dot return dot token, not that it can only be used before any white spaces present
     if (ch === "." && !state.afterWhiteSpace) {
         const start = state.pos;
-        const { raw, text, linePos } = read(state, start, 1);
+        const { raw, text } = read(state, start, 1);
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: ExprTokenType.DOT,
             raw,
@@ -1767,7 +1718,7 @@ function nextExprToken(state) {
             value: text,
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         return tokens;
@@ -1778,8 +1729,11 @@ function nextExprToken(state) {
         state.pos = advance(state);
         // loop until ")" mark
         const start = state.pos;
-        const { raw, text, linePos } = readUntilClose(state, start, "(", ")");
+        const { raw, text } = readUntilClose(state, start, "(", ")");
         const value = text;
+        const pos = [start, state.pos];
+        mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: ExprTokenType.ARGS,
             raw,
@@ -1787,7 +1741,7 @@ function nextExprToken(state) {
             value,
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
         };
         tokens.push(tok);
         // skip "(" sign
@@ -1800,7 +1754,10 @@ function nextExprToken(state) {
     if (/\s/.test(ch)) {
         // handle white space token
         let start = state.pos;
-        const { raw: wRaw, text: wText, linePos: wLinePos, } = readUntilChar(state, start, /\s/, true);
+        const { raw: wRaw, text: wText } = readUntilChar(state, start, /\s/, true);
+        const wPos = [start, state.pos];
+        mergeTokenPosition(wPos, parentTok);
+        const wLinePos = getLinePosFromRange(tempState.lineStarts, wPos);
         const wTok = {
             type: ExprTokenType.WHITE_SPACE,
             raw: wRaw,
@@ -1808,35 +1765,41 @@ function nextExprToken(state) {
             value: wText,
             quoted: false,
             linePos: wLinePos,
-            pos: { start, end: state.pos },
+            pos: wPos,
         };
         tokens.push(wTok);
         state.afterWhiteSpace = true;
         // handle type token
         start = state.pos;
-        const { raw: tRaw, text: tText, linePos: tLinePos, } = read(state, start, Infinity);
+        const { raw: tRaw, text: tText } = read(state, start, Infinity);
+        const tPos = [start, state.pos];
+        mergeTokenPosition(tPos, parentTok);
+        const tLnePos = getLinePosFromRange(tempState.lineStarts, tPos);
         const exprTok = {
             type: ExprTokenType.TYPE,
             raw: tRaw,
             text: tText,
             value: tText,
             quoted: false,
-            linePos: tLinePos,
-            pos: { start, end: state.pos },
+            linePos: tLnePos,
+            pos: tPos,
         };
         tokens.push(exprTok);
         return tokens;
     }
     if (ch === '"' || ch === "'")
-        return readQuotedPath(state);
+        return readQuotedPath(state, tempState, parentTok);
     else
-        return readPath(state);
+        return readPath(state, tempState, parentTok);
 }
-function readQuotedPath(state) {
+function readQuotedPath(state, tempState, parentTok) {
     let tokens = [];
     const start = state.pos;
-    const { raw, text, linePos } = readUntilChar(state, start, current(state));
+    const { raw, text } = readUntilChar(state, start, current(state));
     const value = text;
+    const pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
         type: ExprTokenType.PATH,
         raw,
@@ -1844,12 +1807,12 @@ function readQuotedPath(state) {
         value,
         quoted: true,
         linePos,
-        pos: { start, end: state.pos },
+        pos,
     };
     tokens.push(tok);
     return tokens;
 }
-function readPath(state) {
+function readPath(state, tempState, parentTok) {
     var _a;
     let tokens = [];
     let out = "";
@@ -1879,10 +1842,12 @@ function readPath(state) {
         out += ch;
         state.pos = advance(state);
     }
-    const linePos = handleLinePos(state, start);
     const raw = state.input.slice(start, state.pos);
     const text = out.trim();
     const value = text;
+    const pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
         type: ExprTokenType.PATH,
         raw,
@@ -1890,7 +1855,7 @@ function readPath(state) {
         value,
         quoted: false,
         linePos,
-        pos: { start, end: state.pos },
+        pos,
     };
     tokens.push(tok);
     return tokens;
@@ -1908,31 +1873,27 @@ function initExprTokenState(input) {
 }
 
 // main function
-function tokenizeText(input, keyValueTok, tempState) {
+function tokenizeText(input, keyValueTok, tempState, depth = 0) {
     // handle tokens
     let state = initTextTokenizerState(input);
     let tokens = [];
     while (true) {
-        const toks = nextTextToken(state);
+        const toks = nextTextToken(state, tempState, keyValueTok, depth);
         tokens.push(...toks);
-        if (tempState)
-            for (const t of toks)
-                mergeScalarPosition(t, tempState);
-        if (keyValueTok)
-            for (const t of toks)
-                mergeTokenPosition(t, keyValueTok);
         if (tokens[tokens.length - 1].type === TextTokenType.EOF)
             break;
     }
+    // increment depth
+    depth++;
     // tokenize expression inside EXPR tokens
     for (const t of tokens)
         if (t.type === TextTokenType.EXPR)
-            t.exprTokens = tokenizeExpr(t.raw ? t.raw : "", t, tokenizeText);
+            t.exprTokens = tokenizeExpr(t.raw ? t.raw : "", t, tempState, depth, tokenizeText);
     // return
     return tokens;
 }
 // function to get next token
-function nextTextToken(state) {
+function nextTextToken(state, tempState, parentTok, depth) {
     // get current character
     const ch = current(state);
     // tokens array
@@ -1940,7 +1901,12 @@ function nextTextToken(state) {
     // if eof reutnr last token
     if (eof(state)) {
         const start = state.pos;
-        const linePos = handleLinePos(state, start);
+        const pos = [start, state.pos];
+        if (depth === 0)
+            mergeScalarPosition(pos, tempState);
+        if (parentTok)
+            mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: TextTokenType.EOF,
             raw: "",
@@ -1948,7 +1914,9 @@ function nextTextToken(state) {
             value: "",
             quoted: false,
             linePos,
-            pos: { start, end: state.pos },
+            pos,
+            freeExpr: false,
+            depth,
         };
         tokens.push(tok);
         return tokens;
@@ -1959,17 +1927,24 @@ function nextTextToken(state) {
         state.pos = advance(state, 2);
         // loop until "}" mark
         const start = state.pos;
-        const { raw, text, linePos } = readUntilClose(state, start, "${", "}");
+        const { raw, text } = readUntilClose(state, start, "${", "}");
         const value = text;
+        const pos = [start, state.pos];
+        if (depth === 0)
+            mergeScalarPosition(pos, tempState);
+        if (parentTok)
+            mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const tok = {
             type: TextTokenType.EXPR,
             raw,
             text,
             value,
             quoted: false,
-            linePos: linePos,
-            pos: { start, end: state.pos },
+            linePos,
+            pos,
             freeExpr: false,
+            depth,
         };
         tokens.push(tok);
         // skip "}"
@@ -1982,25 +1957,38 @@ function nextTextToken(state) {
         state.pos = advance(state);
         // handle expr token (read until end of the input)
         const start = state.pos;
-        const { raw, text, linePos } = read(state, start, Infinity);
+        const { raw, text } = read(state, start, Infinity);
         const value = text;
+        const pos = [start, state.pos];
+        if (depth === 0)
+            mergeScalarPosition(pos, tempState);
+        if (parentTok)
+            mergeTokenPosition(pos, parentTok);
+        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
         const exprTok = {
             type: TextTokenType.EXPR,
             raw,
             text,
             value,
             quoted: false,
-            linePos: linePos,
-            pos: { start, end: state.pos },
+            linePos,
+            pos,
             freeExpr: true,
+            depth,
         };
         tokens.push(exprTok);
         return tokens;
     }
     // read until first interpolation mark "${"
     const start = state.pos;
-    const { raw, text, linePos } = readUntilChar(state, start, "${", true);
+    const { raw, text } = readUntilChar(state, start, "${", true);
     const value = text;
+    const pos = [start, state.pos];
+    if (depth === 0)
+        mergeScalarPosition(pos, tempState);
+    if (parentTok)
+        mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const textTok = {
         type: TextTokenType.TEXT,
         raw,
@@ -2008,7 +1996,9 @@ function nextTextToken(state) {
         value,
         quoted: false,
         linePos,
-        pos: { start, end: state.pos },
+        pos,
+        freeExpr: false,
+        depth,
     };
     tokens.push(textTok);
     return tokens;
@@ -2077,7 +2067,7 @@ async function traverseNodes(tree, paths, state, tempState, skipNum) {
         // if node resolved add error and break
         if (!resolved) {
             const pathStr = paths.map((p) => p.path).join(".");
-            tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", `Path: ${pathStr} is not present in target YAML tree.`));
+            tempState.errors.push(new YAMLExprError(tok.pos, "", `Path: ${pathStr} is not present in target YAML tree.`));
             node = undefined;
             break;
         }
@@ -2185,7 +2175,7 @@ async function handleThis(ctx, state, tempState) {
         if (ctx.type) {
             const verified = verifyNodeType(node, ctx.type.type);
             if (!verified) {
-                tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${ctx.type.type}`));
+                tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", `Type mis-match, value used is not of type: ${ctx.type.type}`));
                 return null;
             }
         }
@@ -2223,7 +2213,7 @@ async function handleImport(ctx, state, tempState) {
     if (ctx.type) {
         const verified = verifyNodeType(node, ctx.type.type);
         if (!verified) {
-            tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${ctx.type.type}.`));
+            tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", `Type mis-match, value used is not of type: ${ctx.type.type}.`));
             return null;
         }
     }
@@ -2277,7 +2267,7 @@ function handleParam(ctx, state, tempState) {
         const type = "as " + param.yamlType;
         const verified = verifyNodeType(value, type);
         if (!verified) {
-            tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${param.yamlType}`));
+            tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", `Type mis-match, value used is not of type: ${param.yamlType}`));
             return null;
         }
     }
@@ -2312,7 +2302,7 @@ function handleLocal(ctx, state, tempState) {
         const type = "as " + local.yamlType;
         const verified = verifyNodeType(value, type);
         if (!verified) {
-            tempState.errors.push(new YAMLExprError([ctx.textToken.pos.start, ctx.textToken.pos.end], "", `Type mis-match, value used is not of type: ${local.yamlType}.`));
+            tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", `Type mis-match, value used is not of type: ${local.yamlType}.`));
             return null;
         }
     }
@@ -2387,7 +2377,7 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
         if (tok.type === ExprTokenType.PATH) {
             // make sure that no two path tokens are repeated
             if (ctx.prevTokenType === "path")
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Path tokens should be separated by dots."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Path tokens should be separated by dots."));
             ctx.prevTokenType = "path";
             // push path text
             ctx.paths.push({ path: tok.text, tok });
@@ -2396,14 +2386,14 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
         if (tok.type === ExprTokenType.DOT) {
             // make sure that no two dot tokens are repeated
             if (ctx.prevTokenType === "dot")
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Path should be present after each dot."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Path should be present after each dot."));
             ctx.prevTokenType = "dot";
         }
         // if args token handle it
         if (tok.type === ExprTokenType.ARGS) {
             // make sure that args token is defined only once
             if (ctx.argsDefined) {
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Each expression can only contain one arguments parenthesis."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Each expression can only contain one arguments parenthesis."));
                 continue;
             }
             ctx.argsDefined = true;
@@ -2417,7 +2407,7 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
         if (tok.type === ExprTokenType.TYPE) {
             // make sure that type token is defined only once
             if (ctx.typeDefined) {
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Each expression can only contain one type definition."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Each expression can only contain one type definition."));
                 continue;
             }
             ctx.typeDefined = true;
@@ -2430,29 +2420,29 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
     // get base (first path) and verify it
     const baseTok = ctx.paths[0];
     if (!verifyBase(baseTok.path)) {
-        tempState.errors.push(new YAMLExprError([baseTok.tok.pos.start, baseTok.tok.pos.end], "", "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."));
+        tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."));
         return undefined;
     }
     // get alias (second path) and verify it
     const aliasTok = ctx.paths[1];
     if (!aliasTok) {
-        tempState.errors.push(new YAMLExprError([baseTok.tok.pos.end, baseTok.tok.pos.end + 1], "", "You have to pass an alias after expression base"));
+        tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "You have to pass an alias after expression base"));
         return undefined;
     }
     if (!verifyAlias(aliasTok.path, baseTok.path, state, tempState)) {
-        tempState.errors.push(new YAMLExprError([aliasTok.tok.pos.start, aliasTok.tok.pos.end], "", "Alias used is not defined in directives"));
+        tempState.errors.push(new YAMLExprError(aliasTok.tok.pos, "", "Alias used is not defined in directives"));
         return undefined;
     }
     // verify arguments if passed
     if (ctx.args && baseTok.path !== "this" && baseTok.path !== "import") {
-        tempState.errors.push(new YAMLExprError([ctx.args.tok.pos.start, ctx.args.tok.pos.end], "", "Arguments will be ignored, they are used with 'this' or 'import' bases only."));
+        tempState.errors.push(new YAMLExprError(ctx.args.tok.pos, "", "Arguments will be ignored, they are used with 'this' or 'import' bases only."));
     }
     // verify type if passed
     if (ctx.type) {
         if (baseTok.path !== "this" && baseTok.path !== "import")
-            tempState.errors.push(new YAMLExprError([ctx.type.tok.pos.start, ctx.type.tok.pos.end], "", "Type will be ignored, it's used with 'this' or 'import' bases only."));
+            tempState.errors.push(new YAMLExprError(ctx.type.tok.pos, "", "Type will be ignored, it's used with 'this' or 'import' bases only."));
         if (!verifyType(ctx.type.type)) {
-            tempState.errors.push(new YAMLExprError([ctx.type.tok.pos.start, ctx.type.tok.pos.end], "", "Invalid type, allowed types are either: 'as scalar', 'as map' or 'as seq'."));
+            tempState.errors.push(new YAMLExprError(ctx.type.tok.pos, "", "Invalid type, allowed types are either: 'as scalar', 'as map' or 'as seq'."));
             ctx.type = undefined;
         }
     }
@@ -2526,19 +2516,19 @@ async function handleArgTokens(tokens, state, tempState) {
         if (tok.type === ArgsTokenType.COMMA) {
             // make sure that no two comma tokens are repeated
             if (prevTokenType === "comma")
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Key value pair should be present after each comma."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Key value pair should be present after each comma."));
             prevTokenType = "comma";
         }
         // if key value pair token handle it
         if (tok.type === ArgsTokenType.KEY_VALUE) {
             // make sure that no two key value tokens are repeated (should never happen)
             if (prevTokenType === "keyValue")
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Key value pairs should be separeted by comma."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Key value pairs should be separeted by comma."));
             // resolve key value token
             const { key, value } = await handleKeyValueTokens(tok.keyValueToks, state, tempState);
             // add key value pair or push error if no key was present
             if (!key) {
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Messing key from key value pair."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Messing key from key value pair."));
                 continue;
             }
             args[key] = value;
@@ -2559,7 +2549,7 @@ async function handleKeyValueTokens(tokens, state, tempState) {
         if (tok.type === KeyValueTokenType.KEY) {
             // make sure that no two key tokens are repeated
             if (prevTokenType === "key")
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Only one key can be used in key=value pair."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Only one key can be used in key=value pair."));
             // handle key
             prevTokenType = "key";
             key = tok.text;
@@ -2568,7 +2558,7 @@ async function handleKeyValueTokens(tokens, state, tempState) {
         if (tok.type === KeyValueTokenType.VALUE) {
             // make sure that no two value tokens are repeated
             if (prevTokenType === "value")
-                tempState.errors.push(new YAMLExprError([tok.pos.start, tok.pos.end], "", "Only one value can be used in key=value pair."));
+                tempState.errors.push(new YAMLExprError(tok.pos, "", "Only one value can be used in key=value pair."));
             // handle value
             prevTokenType = "value";
             value = await handleTextTokens(tok.valueToks, state, tempState);
@@ -2641,10 +2631,11 @@ function resolveAlias(alias, tempState) {
  */
 async function resolveScalar(scalar, anchored, state, tempState) {
     // update range
-    if (scalar.range)
-        tempState.range = [scalar.range[0], scalar.range[1]];
-    else
-        tempState.range = [0, 99999];
+    if (!anchored)
+        if (scalar.range)
+            tempState.range = [scalar.range[0], scalar.range[1]];
+        else
+            tempState.range = [0, 99999];
     // Detect circular dependency
     if (anchored && !scalar.resolved) {
         tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
@@ -2675,10 +2666,11 @@ async function resolveScalar(scalar, anchored, state, tempState) {
  */
 async function resolveMap(map, anchored, state, tempState) {
     // update range
-    if (map.range)
-        tempState.range = [map.range[0], map.range[1]];
-    else
-        tempState.range = [0, 99999];
+    if (!anchored)
+        if (map.range)
+            tempState.range = [map.range[0], map.range[1]];
+        else
+            tempState.range = [0, 99999];
     // var to hold out value
     if (anchored && !map.resolved) {
         tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
@@ -2702,10 +2694,11 @@ async function resolveMap(map, anchored, state, tempState) {
 }
 async function resolveSeq(seq, anchored, state, tempState) {
     // update range
-    if (seq.range)
-        tempState.range = [seq.range[0], seq.range[1]];
-    else
-        tempState.range = [0, 99999];
+    if (!anchored)
+        if (seq.range)
+            tempState.range = [seq.range[0], seq.range[1]];
+        else
+            tempState.range = [0, 99999];
     // check resolve status
     if (anchored && !seq.resolved) {
         tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
@@ -2772,7 +2765,7 @@ function filterPrivate(parse, tempState, cache) {
             // if it's not a record then path is not true
             if (!isRecord(node)) {
                 // create error
-                const error = new YAMLExprError([token.pos.start, token.pos.end], "", `Path: ${pathStr} is not present in target YAML tree.`);
+                const error = new YAMLExprError([token.pos[0], token.pos[1]], "", `Path: ${pathStr} is not present in target YAML tree.`);
                 // push error into directive token, directives object and overall errors
                 dirToken.errors.push(error);
                 cache.directives.errors.push(error);
@@ -3024,7 +3017,7 @@ async function parseExtend(path, options = {}, state) {
         for (const e of ts.errors) {
             e.filename = ts.filename;
             e.path = ts.resolvedPath;
-            e.extendLinePos = getLinePosFromRange(ts.source, ts.lineStarts, e.pos);
+            e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
             e.message =
                 e.message +
                     ` This error occured in file: ${e.filename ? e.filename : "Not defined"}, at path: ${e.path}`;

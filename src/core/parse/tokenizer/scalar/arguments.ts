@@ -1,7 +1,6 @@
 import {
   current,
   eof,
-  handleLinePos,
   mergeTokenPosition,
   read,
   readUntilChar,
@@ -12,22 +11,26 @@ import {
   ArgsTokenType,
   type ArgsTokenizerState,
   type ExprToken,
+  Pos,
   type TokenizeTextFunc,
 } from "../tokenizerTypes.js";
+import { TempParseState } from "../../parseTypes.js";
+import { getLinePosFromRange } from "../../utils/random.js";
 
 // main function
 export function tokenizeArgs(
   input: string,
   exprTok: ExprToken,
+  tempState: TempParseState,
+  depth: number,
   tokenizeTextFunc: TokenizeTextFunc
 ): ArgsToken[] {
   // handle tokens
   let tokens: ArgsToken[] = [];
   let state: ArgsTokenizerState = initArgsTokenState(input);
   while (true) {
-    const toks = nextArgsToken(state);
+    const toks = nextArgsToken(state, tempState, exprTok);
     tokens.push(...toks);
-    for (const t of toks) mergeTokenPosition(t, exprTok);
     if (tokens[tokens.length - 1].type === ArgsTokenType.EOF) break;
   }
 
@@ -37,6 +40,8 @@ export function tokenizeArgs(
       t.keyValueToks = tokenizeKeyValue(
         t.raw ? t.raw : "",
         t,
+        tempState,
+        depth,
         tokenizeTextFunc
       );
 
@@ -44,7 +49,11 @@ export function tokenizeArgs(
   return tokens;
 }
 
-function nextArgsToken(state: ArgsTokenizerState): ArgsToken[] {
+function nextArgsToken(
+  state: ArgsTokenizerState,
+  tempState: TempParseState,
+  parentTok: ExprToken
+): ArgsToken[] {
   // get current character
   const ch = current(state);
 
@@ -54,7 +63,9 @@ function nextArgsToken(state: ArgsTokenizerState): ArgsToken[] {
   // if eof reutnr last token
   if (eof(state)) {
     const start = state.pos;
-    const linePos = handleLinePos(state, start);
+    const pos: Pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok: ArgsToken = {
       type: ArgsTokenType.EOF,
       raw: "",
@@ -62,7 +73,7 @@ function nextArgsToken(state: ArgsTokenizerState): ArgsToken[] {
       value: "",
       quoted: false,
       linePos,
-      pos: { start, end: state.pos },
+      pos,
     };
     tokens.push(tok);
     return tokens;
@@ -70,15 +81,19 @@ function nextArgsToken(state: ArgsTokenizerState): ArgsToken[] {
 
   if (ch === ",") {
     const start = state.pos;
-    const { raw, text, linePos } = read(state, start, 1);
+    const { raw, text } = read(state, start, 1);
+    const value = text;
+    const pos: Pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok: ArgsToken = {
       type: ArgsTokenType.COMMA,
       raw,
       text,
-      value: text,
+      value,
       quoted: false,
       linePos,
-      pos: { start, end: state.pos },
+      pos,
     };
     tokens.push(tok);
     return tokens;
@@ -86,8 +101,11 @@ function nextArgsToken(state: ArgsTokenizerState): ArgsToken[] {
 
   // handle KeyValue pair token
   const start = state.pos;
-  const { raw, text, linePos } = readUntilChar(state, start, ",");
+  const { raw, text } = readUntilChar(state, start, ",");
   const value = text;
+  const pos: Pos = [start, state.pos];
+  mergeTokenPosition(pos, parentTok);
+  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: ArgsToken = {
     type: ArgsTokenType.KEY_VALUE,
     raw,
@@ -95,7 +113,7 @@ function nextArgsToken(state: ArgsTokenizerState): ArgsToken[] {
     value,
     quoted: false,
     linePos,
-    pos: { start, end: state.pos },
+    pos,
   };
   tokens.push(tok);
 

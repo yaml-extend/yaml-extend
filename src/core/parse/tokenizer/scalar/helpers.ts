@@ -1,6 +1,5 @@
-import type { BasicState, ExtendLinePos, RawToken } from "../tokenizerTypes.js";
+import type { BasicState, RawToken } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
-import { getLinePosFromRange } from "../../utils/random.js";
 
 // basic helpers
 export function current<S extends BasicState>(state: S): string {
@@ -17,78 +16,20 @@ export function peek<S extends BasicState>(state: S, n = 1): string {
   return state.input.substr(state.pos, n);
 }
 
-// Function to handle line position
-export function handleLinePos<S extends BasicState>(
-  state: S,
-  start: number
-): ExtendLinePos[] {
-  let linePos: ExtendLinePos[] = [];
-  let relLineStart = start - state.absLineStart;
-  let i = start;
-  while (i < state.pos) {
-    if (state.input[i] === "\n") {
-      linePos.push({
-        line: state.line,
-        start: relLineStart,
-        end: i - state.absLineStart,
-      });
-      relLineStart = 0;
-      state.line++;
-      state.absLineStart = i + 1;
-    }
-    i++;
-  }
-  linePos.push({
-    line: state.line,
-    start: relLineStart,
-    end: i - state.absLineStart,
-  });
-  return linePos;
+export function mergeTokenPosition<PT extends RawToken<any>>(
+  pos: [number, number],
+  parentTok: PT
+) {
+  pos[0] += parentTok.pos[0];
+  pos[1] += parentTok.pos[0];
 }
 
-export function mergeTokenPosition<
-  T extends RawToken<any>,
-  PT extends RawToken<any>
->(tok: T, parentTok: PT) {
-  // add absolute start position of the parent
-  const parentStart = parentTok.pos.start;
-  tok.pos.start += parentStart;
-  tok.pos.end += parentStart;
-  // update line positions
-  for (let i = 0; i < tok.linePos.length; i++) {
-    const linePos = tok.linePos[i];
-    const parentLinePos = parentTok.linePos[linePos.line];
-    if (parentTok.linePos[0]) linePos.line += parentTok.linePos[0].line;
-    linePos.start += parentLinePos.start;
-    linePos.end += parentLinePos.start;
-  }
-}
-
-export function mergeScalarPosition<T extends RawToken<any>>(
-  tok: T,
+export function mergeScalarPosition(
+  pos: [number, number],
   tempState: TempParseState
 ) {
-  const start = tempState.range[0];
-  const end = tempState.range[1];
-  if (end === 99999) return;
-
-  // add absolute start positions
-  tok.pos.start += start;
-  tok.pos.end += start;
-  // get line position of range
-  const parentLinePositions = getLinePosFromRange(
-    tempState.source,
-    tempState.lineStarts,
-    [start, end]
-  );
-  // update line positions
-  for (let i = 0; i < tok.linePos.length; i++) {
-    const linePos = tok.linePos[i];
-    const parentLinePos = parentLinePositions[linePos.line];
-    if (parentLinePositions[0]) linePos.line += parentLinePositions[0].line;
-    linePos.start += parentLinePos.start;
-    linePos.end += parentLinePos.start;
-  }
+  pos[0] += tempState.range[0];
+  pos[1] += tempState.range[0];
 }
 
 export function readUntilClose<S extends BasicState>(
@@ -97,7 +38,7 @@ export function readUntilClose<S extends BasicState>(
   openChar: string,
   closeChar: string,
   ignoreTextTrim?: boolean
-): { linePos: ExtendLinePos[]; raw: string; text: string } {
+): { raw: string; text: string } {
   let out = "";
   let depth = 0;
   const checkOpen =
@@ -140,11 +81,10 @@ export function readUntilClose<S extends BasicState>(
     state.pos = advance(state);
   }
 
-  const linePos = handleLinePos(state, start);
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? out : out.trim();
 
-  return { linePos, raw, text };
+  return { raw, text };
 }
 
 export function read<S extends BasicState>(
@@ -152,12 +92,11 @@ export function read<S extends BasicState>(
   start: number,
   steps: number,
   ignoreTextTrim?: boolean
-): { linePos: ExtendLinePos[]; raw: string; text: string } {
+): { raw: string; text: string } {
   state.pos = advance(state, steps);
-  const linePos = handleLinePos(state, start);
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? raw : raw.trim();
-  return { linePos, raw, text };
+  return { raw, text };
 }
 
 export function readUntilChar<S extends BasicState>(
@@ -165,7 +104,7 @@ export function readUntilChar<S extends BasicState>(
   start: number,
   stopChar: string | string[] | RegExp,
   ignoreTextTrim?: boolean
-): { linePos: ExtendLinePos[]; raw: string; text: string } {
+): { raw: string; text: string } {
   let out = "";
   const checkStop =
     stopChar instanceof RegExp
@@ -202,9 +141,8 @@ export function readUntilChar<S extends BasicState>(
     state.pos = advance(state);
   }
 
-  const linePos = handleLinePos(state, start);
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? out : out.trim();
 
-  return { linePos, raw, text };
+  return { raw, text };
 }

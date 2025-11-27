@@ -1,7 +1,6 @@
 import {
   current,
   eof,
-  handleLinePos,
   mergeTokenPosition,
   read,
   readUntilChar,
@@ -12,35 +11,47 @@ import {
   type KeyValueTokenizerState,
   type ArgsToken,
   type TokenizeTextFunc,
+  Pos,
 } from "../tokenizerTypes.js";
-import { getValueFromText } from "../../utils/random.js";
+import { getLinePosFromRange, getValueFromText } from "../../utils/random.js";
+import { TempParseState } from "../../parseTypes.js";
 
 // main function
 export function tokenizeKeyValue(
   input: string,
   argsTok: ArgsToken,
+  tempState: TempParseState,
+  depth: number,
   tokenizeTextFunc: TokenizeTextFunc
 ): KeyValueToken[] {
   // handle tokens
   let tokens: KeyValueToken[] = [];
   let state: KeyValueTokenizerState = initArgsTokenState(input);
   while (true) {
-    const toks = nextArgsToken(state);
+    const toks = nextArgsToken(state, tempState, argsTok);
     tokens.push(...toks);
-    for (const t of toks) mergeTokenPosition(t, argsTok);
     if (tokens[tokens.length - 1]?.type === KeyValueTokenType.EOF) break;
   }
 
   // resolve any value tokens using text tokenizer
   for (const t of tokens)
     if (t.type === KeyValueTokenType.VALUE)
-      t.valueToks = tokenizeTextFunc(t.raw ? t.raw.trim() : "", t);
+      t.valueToks = tokenizeTextFunc(
+        t.raw ? t.raw.trim() : "",
+        t,
+        tempState,
+        depth
+      );
 
   // return
   return tokens;
 }
 
-function nextArgsToken(state: KeyValueTokenizerState): KeyValueToken[] {
+function nextArgsToken(
+  state: KeyValueTokenizerState,
+  tempState: TempParseState,
+  parentTok: ArgsToken
+): KeyValueToken[] {
   // get current character
   const ch = current(state);
 
@@ -50,7 +61,9 @@ function nextArgsToken(state: KeyValueTokenizerState): KeyValueToken[] {
   // if eof reutnr last token
   if (eof(state)) {
     const start = state.pos;
-    const linePos = handleLinePos(state, start);
+    const pos: Pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok: KeyValueToken = {
       type: KeyValueTokenType.EOF,
       raw: "",
@@ -58,7 +71,7 @@ function nextArgsToken(state: KeyValueTokenizerState): KeyValueToken[] {
       value: "",
       quoted: false,
       linePos,
-      pos: { start, end: state.pos },
+      pos,
     };
     tokens.push(tok);
     return tokens;
@@ -66,31 +79,42 @@ function nextArgsToken(state: KeyValueTokenizerState): KeyValueToken[] {
 
   if (ch === "=") {
     const start = state.pos;
-    const { raw, text, linePos } = read(state, start, 1);
+    const { raw, text } = read(state, start, 1);
+    const value = text;
+    const pos: Pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok: KeyValueToken = {
       type: KeyValueTokenType.EQUAL,
       raw,
       text,
-      value: text,
+      value,
       quoted: false,
       linePos,
-      pos: { start, end: state.pos },
+      pos,
     };
     tokens.push(tok);
     state.afterEqual = true;
     tokens;
   }
 
-  if (ch === '"' || ch === "'") return readQuoted(state);
-  else return readUnQuoted(state);
+  if (ch === '"' || ch === "'") return readQuoted(state, tempState, parentTok);
+  else return readUnQuoted(state, tempState, parentTok);
 }
 
-function readQuoted(state: KeyValueTokenizerState): KeyValueToken[] {
+function readQuoted(
+  state: KeyValueTokenizerState,
+  tempState: TempParseState,
+  parentTok: ArgsToken
+): KeyValueToken[] {
   let tokens: KeyValueToken[] = [];
   const start = state.pos;
-  const { raw, text, linePos } = readUntilChar(state, start, current(state));
+  const { raw, text } = readUntilChar(state, start, current(state));
   if (!text) return tokens; // if only white space omit token
   const value = state.afterEqual ? getValueFromText(text) : text;
+  const pos: Pos = [start, state.pos];
+  mergeTokenPosition(pos, parentTok);
+  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: KeyValueToken = {
     type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
     raw,
@@ -98,19 +122,26 @@ function readQuoted(state: KeyValueTokenizerState): KeyValueToken[] {
     value,
     quoted: true,
     linePos,
-    pos: { start, end: state.pos },
+    pos,
   };
   tokens.push(tok);
 
   return tokens;
 }
 
-function readUnQuoted(state: KeyValueTokenizerState): KeyValueToken[] {
+function readUnQuoted(
+  state: KeyValueTokenizerState,
+  tempState: TempParseState,
+  parentTok: ArgsToken
+): KeyValueToken[] {
   let tokens: KeyValueToken[] = [];
   const start = state.pos;
-  const { raw, text, linePos } = readUntilChar(state, start, ["=", ","]);
+  const { raw, text } = readUntilChar(state, start, ["=", ","]);
   if (!text) return tokens; // if only white space omit token
   const value = state.afterEqual ? getValueFromText(text) : text;
+  const pos: Pos = [start, state.pos];
+  mergeTokenPosition(pos, parentTok);
+  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: KeyValueToken = {
     type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
     raw,
@@ -118,7 +149,7 @@ function readUnQuoted(state: KeyValueTokenizerState): KeyValueToken[] {
     value,
     quoted: false,
     linePos,
-    pos: { start, end: state.pos },
+    pos,
   };
   tokens.push(tok);
 

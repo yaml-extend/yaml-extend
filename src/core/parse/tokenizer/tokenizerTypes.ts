@@ -1,4 +1,5 @@
 import { YAMLError, YAMLExprError } from "../../extendClasses/error.js";
+import { TempParseState } from "../parseTypes.js";
 export type { TokenizeTextFunc } from "./scalar/text.js";
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -12,12 +13,15 @@ export type YAMLDataTypes = "scalar" | "map" | "seq";
 /**
  * Object that hold position of token inside single line.
  */
-export type ExtendLinePos = { line: number; start: number; end: number };
+export type LinePos = {
+  line: number;
+  col: number;
+};
 
 /**
- * Object that hold absolute position of token inside a text.
+ * Array with start and end absolute positions.
  */
-export type Pos = { start: number; end: number };
+export type Pos = [number, number];
 
 /**
  * Minimal data used in a single token.
@@ -32,7 +36,7 @@ export type RawToken<T> = {
   /** Boolean to define if text was quoted or not. */
   quoted: boolean;
   /** Array of lines in which token spans along with it's position inside each line. */
-  linePos: ExtendLinePos[];
+  linePos: [LinePos, LinePos] | undefined;
   /** Absolute position of token in text */
   pos: Pos;
 };
@@ -60,7 +64,7 @@ export type Directives = {
 type RawDirectiveToken = {
   type: "TAG" | "YAML" | "FILENAME" | "IMPORT" | "PARAM" | "LOCAL" | "PRIVATE";
   rawLine: string;
-  linePos: ExtendLinePos[];
+  linePos: [LinePos, LinePos] | undefined;
   pos: Pos;
   valid: boolean;
   errors: YAMLExprError[];
@@ -255,8 +259,9 @@ export enum KeyValueTokenType {
  */
 export type TextToken = RawToken<string> & {
   type: TextTokenType;
+  depth: number;
+  freeExpr: boolean;
   exprTokens?: ExprToken[];
-  freeExpr?: boolean;
 };
 
 /**

@@ -124,7 +124,7 @@ async function handleExprTokens(
       if (ctx.prevTokenType === "path")
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Path tokens should be separated by dots."
           )
@@ -140,7 +140,7 @@ async function handleExprTokens(
       if (ctx.prevTokenType === "dot")
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Path should be present after each dot."
           )
@@ -154,7 +154,7 @@ async function handleExprTokens(
       if (ctx.argsDefined) {
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Each expression can only contain one arguments parenthesis."
           )
@@ -174,7 +174,7 @@ async function handleExprTokens(
       if (ctx.typeDefined) {
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Each expression can only contain one type definition."
           )
@@ -192,7 +192,7 @@ async function handleExprTokens(
       if (ctx.whiteSpaceDefined) {
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             `Each expression can only contain one white space before type definition, if it's a part of a path wrap it inside "" or ''.`
           )
@@ -207,7 +207,7 @@ async function handleExprTokens(
   if (!verifyBase(baseTok.path)) {
     tempState.errors.push(
       new YAMLExprError(
-        [baseTok.tok.pos.start, baseTok.tok.pos.end],
+        baseTok.tok.pos,
         "",
         "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."
       )
@@ -220,7 +220,7 @@ async function handleExprTokens(
   if (!aliasTok) {
     tempState.errors.push(
       new YAMLExprError(
-        [baseTok.tok.pos.end, baseTok.tok.pos.end + 1],
+        baseTok.tok.pos,
         "",
         "You have to pass an alias after expression base"
       )
@@ -230,7 +230,7 @@ async function handleExprTokens(
   if (!verifyAlias(aliasTok.path, baseTok.path as "import", state, tempState)) {
     tempState.errors.push(
       new YAMLExprError(
-        [aliasTok.tok.pos.start, aliasTok.tok.pos.end],
+        aliasTok.tok.pos,
         "",
         "Alias used is not defined in directives"
       )
@@ -242,7 +242,7 @@ async function handleExprTokens(
   if (ctx.args && baseTok.path !== "this" && baseTok.path !== "import") {
     tempState.errors.push(
       new YAMLExprError(
-        [ctx.args.tok.pos.start, ctx.args.tok.pos.end],
+        ctx.args.tok.pos,
         "",
         "Arguments will be ignored, they are used with 'this' or 'import' bases only."
       )
@@ -254,7 +254,7 @@ async function handleExprTokens(
     if (baseTok.path !== "this" && baseTok.path !== "import")
       tempState.errors.push(
         new YAMLExprError(
-          [ctx.type.tok.pos.start, ctx.type.tok.pos.end],
+          ctx.type.tok.pos,
           "",
           "Type will be ignored, it's used with 'this' or 'import' bases only."
         )
@@ -262,7 +262,7 @@ async function handleExprTokens(
     if (!verifyType(ctx.type.type)) {
       tempState.errors.push(
         new YAMLExprError(
-          [ctx.type.tok.pos.start, ctx.type.tok.pos.end],
+          ctx.type.tok.pos,
           "",
           "Invalid type, allowed types are either: 'as scalar', 'as map' or 'as seq'."
         )
@@ -353,7 +353,7 @@ async function handleArgTokens(
       if (prevTokenType === "comma")
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Key value pair should be present after each comma."
           )
@@ -366,7 +366,7 @@ async function handleArgTokens(
       if (prevTokenType === "keyValue")
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Key value pairs should be separeted by comma."
           )
@@ -381,11 +381,7 @@ async function handleArgTokens(
       // add key value pair or push error if no key was present
       if (!key) {
         tempState.errors.push(
-          new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
-            "",
-            "Messing key from key value pair."
-          )
+          new YAMLExprError(tok.pos, "", "Messing key from key value pair.")
         );
         continue;
       }
@@ -416,7 +412,7 @@ async function handleKeyValueTokens(
       if (prevTokenType === "key")
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Only one key can be used in key=value pair."
           )
@@ -432,7 +428,7 @@ async function handleKeyValueTokens(
       if (prevTokenType === "value")
         tempState.errors.push(
           new YAMLExprError(
-            [tok.pos.start, tok.pos.end],
+            tok.pos,
             "",
             "Only one value can be used in key=value pair."
           )

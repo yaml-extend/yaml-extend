@@ -3,7 +3,6 @@ import {
   DirectiveToken,
   RawToken,
   ImportParamInfo,
-  ExtendLinePos,
   Pos,
   Directives,
 } from "../tokenizerTypes.js";
@@ -16,7 +15,7 @@ import {
   verifyTag,
   verifyVersion,
 } from "./verify.js";
-import { getValueFromText } from "../../utils/random.js";
+import { getLinePosFromRange, getValueFromText } from "../../utils/random.js";
 import { TempParseState } from "../../parseTypes.js";
 
 /* ---------------------- Tokenizer for a single line (with spans) ---------------------- */
@@ -26,8 +25,8 @@ import { TempParseState } from "../../parseTypes.js";
  */
 export function tokenizeDirLine(
   line: string,
-  lineNum: number,
-  strIdx: number
+  strIdx: number,
+  tempState: TempParseState
 ): RawToken<any>[] {
   if (!line || !line.startsWith("%")) return [];
 
@@ -51,16 +50,15 @@ export function tokenizeDirLine(
       text = unescapeQuoted(inner, quoteChar);
     }
     const value = getValueFromText(text);
+    const pos: Pos = [strIdx + start, strIdx + end];
+    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     tokens.push({
       raw,
       text,
       quoted,
       value,
-      linePos: [{ start, end, line: lineNum }],
-      pos: {
-        start: strIdx + start,
-        end: strIdx + end,
-      },
+      linePos,
+      pos,
     });
   };
 
@@ -265,11 +263,12 @@ function findTopLevelEquals(s: string): number {
 function buildInnerRawToken(
   parentTok: RawToken<any>,
   absStart: number,
-  absEnd: number
+  absEnd: number,
+  tempState: TempParseState
 ): RawToken<any> {
   const raw = parentTok.raw.slice(
-    absStart - parentTok.pos.start,
-    absEnd - parentTok.pos.start
+    absStart - parentTok.pos[0],
+    absEnd - parentTok.pos[0]
   );
   let quoted = false;
   let text = raw;
@@ -284,20 +283,15 @@ function buildInnerRawToken(
     text = unescapeQuoted(inner, raw[0]);
   }
   const value = getValueFromText(text);
-  const line =
-    parentTok.linePos && parentTok.linePos.length > 0
-      ? parentTok.linePos[0].line
-      : 0;
+  const pos: Pos = [absStart, absEnd];
+  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   return {
     raw,
     text,
     value,
     quoted,
-    linePos: [{ start: absStart, end: absEnd, line }],
-    pos: {
-      start: absStart,
-      end: absEnd,
-    },
+    linePos,
+    pos,
   };
 }
 
@@ -308,16 +302,14 @@ function buildInnerRawToken(
 export function parseDirectiveFromTokens(
   tokens: RawToken<any>[],
   rawLine: string,
-  lineNum: number,
-  strIdx: number
+  strIdx: number,
+  tempState: TempParseState
 ): DirectiveToken | null {
   if (!tokens || tokens.length === 0) return null;
 
   // calc pos and linePos of the hole directive
-  const linePos: ExtendLinePos[] = [
-    { start: 0, end: rawLine.length, line: lineNum },
-  ];
-  const pos: Pos = { start: strIdx, end: strIdx + rawLine.length };
+  const pos: Pos = [strIdx, strIdx + rawLine.length];
+  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
 
   // handle baseTok
   const rawBaseTok = tokens[0];
@@ -383,14 +375,19 @@ export function parseDirectiveFromTokens(
       let paramsEnd: number | null = null;
       for (let idx = 3; idx < tokens.length; idx++) {
         const tok = tokens[idx];
-        if (paramsStart === null) paramsStart = tok.pos.start;
-        paramsEnd = tok.pos.end;
+        if (paramsStart === null) paramsStart = tok.pos[0];
+        paramsEnd = tok.pos[1];
         const raw = tok.raw === null ? "" : (tok.raw as string);
 
         const eqIndex = findTopLevelEquals(raw);
         if (eqIndex === -1) {
           // key only -> build a RawToken for the key (it's the whole token)
-          const keyTok = buildInnerRawToken(tok, tok.pos.start, tok.pos.end);
+          const keyTok = buildInnerRawToken(
+            tok,
+            tok.pos[0],
+            tok.pos[1],
+            tempState
+          );
           let keyText = keyTok.text;
 
           params[keyText] = {
@@ -403,14 +400,19 @@ export function parseDirectiveFromTokens(
           // key/value split where '=' is not inside quotes
           const keyRawSlice = raw.slice(0, eqIndex);
           const valRawSlice = raw.slice(eqIndex + 1);
-          const keyStart = tok.pos.start;
-          const keyEnd = tok.pos.start + eqIndex;
-          const valueStart = tok.pos.start + eqIndex + 1;
-          const valueEnd = tok.pos.end;
+          const keyStart = tok.pos[0];
+          const keyEnd = tok.pos[0] + eqIndex;
+          const valueStart = tok.pos[0] + eqIndex + 1;
+          const valueEnd = tok.pos[1];
 
-          const keyTok = buildInnerRawToken(tok, keyStart, keyEnd);
-          const eqTok = buildInnerRawToken(tok, keyEnd, valueStart);
-          const valueTok = buildInnerRawToken(tok, valueStart, valueEnd);
+          const keyTok = buildInnerRawToken(tok, keyStart, keyEnd, tempState);
+          const eqTok = buildInnerRawToken(tok, keyEnd, valueStart, tempState);
+          const valueTok = buildInnerRawToken(
+            tok,
+            valueStart,
+            valueEnd,
+            tempState
+          );
           const keyText = keyTok.text;
 
           params[keyText] = {
@@ -567,8 +569,8 @@ export function tokenizeDirectives(
   for (let idx = 0; idx < lines.length; idx++) {
     const rawLine = lines[idx];
     if (rawLine.startsWith("%")) {
-      const tokens = tokenizeDirLine(rawLine, idx, strIdx);
-      let dir = parseDirectiveFromTokens(tokens, rawLine, idx, strIdx);
+      const tokens = tokenizeDirLine(rawLine, strIdx, tempState);
+      let dir = parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState);
       if (dir) {
         switch (dir.type) {
           case "FILENAME":

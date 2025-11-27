@@ -1,9 +1,6 @@
 import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, DocumentOptions, SchemaOptions, ToJSOptions, Scalar, Alias, YAMLMap, YAMLSeq } from 'yaml';
 export { CollectionTag, CreateNodeOptions, DocumentOptions, ParseOptions, ScalarTag, Schema, SchemaOptions, TagId, Tags, ToJSOptions, ToStringOptions } from 'yaml';
 
-declare function tokenizeText(input: string, keyValueTok: KeyValueToken | undefined, tempState: TempParseState, depth?: number): TextToken[];
-type TokenizeTextFunc = typeof tokenizeText;
-
 /**
  * Types of data in YAML
  */
@@ -141,12 +138,6 @@ type PrivateDirectiveToken = RawDirectiveToken & {
  * General type that holds all directive tokens.
  */
 type DirectiveToken = TagDirectiveToken | YamlDirectiveToken | FilenameDirectiveToken | ImportDirectiveToken | LocalDirectiveToken | ParamDirectiveToken | PrivateDirectiveToken;
-/**
- * Helper to get specific type of directive token from general type.
- */
-type DirectiveOf<T extends DirectiveToken["type"]> = Extract<DirectiveToken, {
-    type: T;
-}>;
 /**
  * Minimal state used in scalar tokenizer step.
  */
@@ -319,10 +310,6 @@ declare class DependencyHandler {
 }
 
 /**
- * Function used to resolve the output of "yaml" lib to allow extended modules.
- */
-type Resolve = (item: unknown, anchored: boolean, state: ParseState, tempState: TempParseState) => Promise<unknown>;
-/**
  * State object generated for each parse function execution or live loader. Persistant state and hold data generated from parsing YAML file.
  */
 type ParseState = {
@@ -332,25 +319,6 @@ type ParseState = {
     dependency: DependencyHandler;
     /** Internally used only. */
     depth: number;
-};
-/**
- * Temporary state only needed during parsing and resolving YAML file, specific for each parse execution.
- */
-type TempParseState = {
-    source: string;
-    options: Options & {
-        basePath: string;
-    };
-    errors: YAMLError[];
-    importedErrors: YAMLError[];
-    resolvedPath: string;
-    filename: string;
-    range: [number, number];
-    anchors: Map<string, unknown>;
-    locals: Record<string, unknown>[];
-    lineStarts: number[];
-    resolveFunc: Resolve;
-    parseFunc: ParseExtend;
 };
 /**
  * Additional options that can be passed to parse function used by extend module.
@@ -481,4 +449,4 @@ declare class LiveParser {
 }
 
 export { ArgsTokenType, ExprTokenType, KeyValueTokenType, LiveParser, TextTokenType, YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
-export type { ArgsToken, ArgsTokenizerState, BasicState, Cache, DirectiveOf, DirectiveToken, Directives, ErrorCode, ErrorName, ExprErrorCode, ExprToken, ExprTokenizerState, ExtendParseOptions, FilenameDirectiveToken, ImportDirectiveToken, ImportParamInfo, KeyValueToken, KeyValueTokenizerState, LinePos, LocalDirectiveToken, ModuleCache, Options, ParamDirectiveToken, ParseEntry, ParseState, Pos, PrivateDirectiveToken, RawToken, TagDirectiveToken, TextToken, TextTokenizerState, TokenizeTextFunc, YAMLDataTypes, YamlDirectiveToken };
+export type { ArgsToken, ArgsTokenizerState, BasicState, Cache, DirectiveToken, Directives, ErrorCode, ErrorName, ExprErrorCode, ExprToken, ExprTokenizerState, ExtendParseOptions, FilenameDirectiveToken, ImportDirectiveToken, KeyValueToken, KeyValueTokenizerState, LinePos, LocalDirectiveToken, ModuleCache, Options, ParamDirectiveToken, ParseEntry, ParseState, Pos, PrivateDirectiveToken, RawToken, TagDirectiveToken, TextToken, TextTokenizerState, YAMLDataTypes, YamlDirectiveToken };

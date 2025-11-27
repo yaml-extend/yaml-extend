@@ -16,6 +16,12 @@ export {
 export { parseExtend } from "./core/parse/index.js";
 export * from "./core/extendClasses/error.js";
 export { LiveParser } from "./core/liveParser/index.js";
+export {
+  TextTokenType,
+  ExprTokenType,
+  ArgsTokenType,
+  KeyValueTokenType,
+} from "./core/parse/tokenizer/tokenizerTypes.js";
 
 export type {
   ExtendParseOptions,
@@ -25,4 +31,27 @@ export type {
   ModuleCache,
   Cache,
 } from "./core/parse/parseTypes.js";
-export type * from "./core/parse/tokenizer/tokenizerTypes.js";
+export type {
+  YAMLDataTypes,
+  LinePos,
+  Pos,
+  RawToken,
+  Directives,
+  DirectiveToken,
+  TagDirectiveToken,
+  YamlDirectiveToken,
+  FilenameDirectiveToken,
+  ImportDirectiveToken,
+  LocalDirectiveToken,
+  ParamDirectiveToken,
+  PrivateDirectiveToken,
+  BasicState,
+  TextTokenizerState,
+  ExprTokenizerState,
+  ArgsTokenizerState,
+  KeyValueTokenizerState,
+  TextToken,
+  ExprToken,
+  ArgsToken,
+  KeyValueToken,
+} from "./core/parse/tokenizer/tokenizerTypes.js";

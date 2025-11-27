@@ -1,5 +1,4 @@
 import { YAMLError, YAMLExprError } from "../../extendClasses/error.js";
-import { TempParseState } from "../parseTypes.js";
 export type { TokenizeTextFunc } from "./scalar/text.js";
 
 ////////////////////////////////////////////////////////////////////////////////////

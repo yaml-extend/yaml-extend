@@ -3363,5 +3363,5 @@ class LiveParser {
     }
 }
 
-export { LiveParser, YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
+export { ArgsTokenType, ExprTokenType, KeyValueTokenType, LiveParser, TextTokenType, YAMLError, YAMLExprError, YAMLParseError, YAMLWarning, parseExtend };
 //# sourceMappingURL=index.js.map

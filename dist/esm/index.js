@@ -2630,6 +2630,10 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
     }
     // get base (first path) and verify it
     const baseTok = ctx.paths[0];
+    if (!baseTok) {
+        tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", "Base is missing from this expression"));
+        return undefined;
+    }
     if (!verifyBase(baseTok.path)) {
         tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."));
         return undefined;

@@ -1,19 +1,22 @@
 %FILENAME test1
-# %IMPORT dd ./test2.yml
+%IMPORT dd ./test2.yml
 %LOCAL gg ggboy
 %LOCAL mm mmboy
 %PARAM ll llboy
 %PRIVATE node111.node7
 ---
-# node: value
+node: value
 
-# node 5:
-#   "node.6":
-#     node7: value
+node 5:
+  "node.6":
+    node7: value
 
-# node2: $this.node
+node2: $this.node
 
 node3: $import.dd.data."node with sapce" ll=ff
-# node111: { $this."node 5"."node.6" }
 
-# node99: $import.dd.data ll=mm
+node111: { $this."node 5"."node.6" }
+
+node99: $import.dd.data ll=mm
+
+mm: text ${ expression } text

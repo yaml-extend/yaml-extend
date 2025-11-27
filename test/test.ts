@@ -7,7 +7,5 @@ const parser = new LiveParser({
   ignoreTags: true,
 });
 const parsed1 = await parser.parse("./test/test.yaml");
-const parsed2 = await parser.parse("./test/test.yaml");
 
-console.debug(parsed1.cache);
-console.debug(parsed2.cache);
+console.debug(parsed1.errors.filter((e) => e.message.startsWith("Unkown")));

@@ -262,6 +262,8 @@ export type TextToken = RawToken<string> & {
   depth: number;
   freeExpr: boolean;
   exprTokens?: ExprToken[];
+  exprMarkOpen?: RawToken<string>;
+  exprMarkClose?: RawToken<string>;
 };
 
 /**
@@ -269,7 +271,9 @@ export type TextToken = RawToken<string> & {
  */
 export type ExprToken = RawToken<string> & {
   type: ExprTokenType;
-  argTokens?: ArgsToken[];
+  argsTokens?: ArgsToken[];
+  argsMarkOpen?: RawToken<string>;
+  argsMarkClose?: RawToken<string>;
 };
 
 /**

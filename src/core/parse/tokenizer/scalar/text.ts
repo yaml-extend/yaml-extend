@@ -1,7 +1,6 @@
 import {
   current,
   eof,
-  advance,
   peek,
   mergeTokenPosition,
   mergeScalarPosition,
@@ -16,6 +15,8 @@ import {
   type TextTokenizerState,
   type KeyValueToken,
   Pos,
+  RawToken,
+  LinePos,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
 import { getLinePosFromRange } from "../../utils/random.js";
@@ -69,14 +70,28 @@ function nextTextToken(
   // tokens array
   let tokens: TextToken[] = [];
 
+  // define tokens
+  let eofToken: TextToken | undefined;
+  let exprToken: TextToken | undefined;
+  let textToken: TextToken | undefined;
+  let omToken: RawToken<string> | undefined;
+  let cmToken: RawToken<string> | undefined;
+
+  // define vars
+  let start: number;
+  let readValue: { raw: string; text: string } | undefined;
+  let value: string;
+  let pos: Pos;
+  let linePos: [LinePos, LinePos] | undefined;
+
   // if eof reutnr last token
   if (eof(state)) {
-    const start = state.pos;
-    const pos: Pos = [start, state.pos];
+    start = state.pos;
+    pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: TextToken = {
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    eofToken = {
       type: TextTokenType.EOF,
       raw: "",
       text: "",
@@ -87,26 +102,140 @@ function nextTextToken(
       freeExpr: false,
       depth,
     };
-    tokens.push(tok);
+    tokens.push(eofToken);
     return tokens;
   }
 
   // handle interpolation opening
   if (peek(state, 2) === "${") {
-    // skip the "${" sign
-    state.pos = advance(state, 2);
-    // loop until "}" mark
-    const start = state.pos;
-    const { raw, text } = readUntilClose(state, start, "${", "}");
-    const value = text;
-    const pos: Pos = [start, state.pos];
+    // make open mark token
+    start = state.pos;
+    readValue = read(state, start, 2);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      if (depth === 0) mergeScalarPosition(pos, tempState);
+      if (parentTok) mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      omToken = {
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    // read expression until "}" mark
+    start = state.pos;
+    readValue = readUntilClose(state, start, "${", "}");
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      if (depth === 0) mergeScalarPosition(pos, tempState);
+      if (parentTok) mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      exprToken = {
+        type: TextTokenType.EXPR,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+        freeExpr: false,
+        depth,
+      };
+    }
+    // make close mark token
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      if (depth === 0) mergeScalarPosition(pos, tempState);
+      if (parentTok) mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      cmToken = {
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    // if main token (expression token) is present push it
+    if (exprToken) {
+      exprToken.exprMarkOpen = omToken;
+      exprToken.exprMarkClose = cmToken;
+      tokens.push(exprToken);
+    }
+    return tokens;
+  }
+
+  // handle string starting with non escaped "$" sign
+  if (state.pos === 0 && ch === "$") {
+    // make "$" mark token
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      if (depth === 0) mergeScalarPosition(pos, tempState);
+      if (parentTok) mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      omToken = {
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    // handle expr token (read until end of the input)
+    start = state.pos;
+    readValue = read(state, start, Infinity);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      if (depth === 0) mergeScalarPosition(pos, tempState);
+      if (parentTok) mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      exprToken = {
+        type: TextTokenType.EXPR,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+        freeExpr: true,
+        depth,
+      };
+    }
+    // if main token (expression token) is present push it
+    if (exprToken) {
+      exprToken.exprMarkOpen = omToken;
+      tokens.push(exprToken);
+    }
+    return tokens;
+  }
+
+  // read until first interpolation mark "${"
+  start = state.pos;
+  readValue = readUntilChar(state, start, "${", true);
+  if (readValue) {
+    value = readValue.text;
+    pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: TextToken = {
-      type: TextTokenType.EXPR,
-      raw,
-      text,
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    textToken = {
+      type: TextTokenType.TEXT,
+      raw: readValue.raw,
+      text: readValue.text,
       value,
       quoted: false,
       linePos,
@@ -114,59 +243,9 @@ function nextTextToken(
       freeExpr: false,
       depth,
     };
-    tokens.push(tok);
-    // skip "}"
-    state.pos = advance(state);
-    return tokens;
   }
+  if (textToken) tokens.push(textToken);
 
-  // handle string starting with non escaped "$" sign
-  if (state.pos === 0 && ch === "$") {
-    // skip "$" mark
-    state.pos = advance(state);
-    // handle expr token (read until end of the input)
-    const start = state.pos;
-    const { raw, text } = read(state, start, Infinity);
-    const value = text;
-    const pos: Pos = [start, state.pos];
-    if (depth === 0) mergeScalarPosition(pos, tempState);
-    if (parentTok) mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const exprTok: TextToken = {
-      type: TextTokenType.EXPR,
-      raw,
-      text,
-      value,
-      quoted: false,
-      linePos,
-      pos,
-      freeExpr: true,
-      depth,
-    };
-    tokens.push(exprTok);
-    return tokens;
-  }
-
-  // read until first interpolation mark "${"
-  const start = state.pos;
-  const { raw, text } = readUntilChar(state, start, "${", true);
-  const value = text;
-  const pos: Pos = [start, state.pos];
-  if (depth === 0) mergeScalarPosition(pos, tempState);
-  if (parentTok) mergeTokenPosition(pos, parentTok);
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-  const textTok: TextToken = {
-    type: TextTokenType.TEXT,
-    raw,
-    text,
-    value,
-    quoted: false,
-    linePos,
-    pos,
-    freeExpr: false,
-    depth,
-  };
-  tokens.push(textTok);
   return tokens;
 }
 

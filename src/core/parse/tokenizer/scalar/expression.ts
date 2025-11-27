@@ -12,7 +12,9 @@ import {
   type ExprToken,
   ExprTokenType,
   type ExprTokenizerState,
+  LinePos,
   Pos,
+  RawToken,
   type TextToken,
   type TokenizeTextFunc,
 } from "../tokenizerTypes.js";
@@ -39,7 +41,7 @@ export function tokenizeExpr(
   // tokenize args inside ARGS token
   for (const t of tokens)
     if (t.type === ExprTokenType.ARGS)
-      t.argTokens = tokenizeArgs(
+      t.argsTokens = tokenizeArgs(
         t.raw ? t.raw : "",
         t,
         tempState,
@@ -62,13 +64,29 @@ function nextExprToken(
   // tokens array
   let tokens: ExprToken[] = [];
 
+  // define tokens
+  let eofToken: ExprToken | undefined;
+  let dotToken: ExprToken | undefined;
+  let argsToken: ExprToken | undefined;
+  let omToken: RawToken<string> | undefined;
+  let cmToken: RawToken<string> | undefined;
+  let wsToken: ExprToken | undefined;
+  let typeToken: ExprToken | undefined;
+
+  // define vars
+  let start: number;
+  let readValue: { raw: string; text: string } | undefined;
+  let value: string;
+  let pos: Pos;
+  let linePos: [LinePos, LinePos] | undefined;
+
   // if eof reutnr last token
   if (eof(state)) {
-    const start = state.pos;
-    const pos: Pos = [start, state.pos];
+    start = state.pos;
+    pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: ExprToken = {
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    eofToken = {
       type: ExprTokenType.EOF,
       raw: "",
       text: "",
@@ -77,93 +95,143 @@ function nextExprToken(
       linePos,
       pos,
     };
-    tokens.push(tok);
+    tokens.push(eofToken);
     return tokens;
   }
 
   // if dot return dot token, not that it can only be used before any white spaces present
   if (ch === "." && !state.afterWhiteSpace) {
-    const start = state.pos;
-    const { raw, text } = read(state, start, 1);
-    const pos: Pos = [start, state.pos];
-    mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: ExprToken = {
-      type: ExprTokenType.DOT,
-      raw,
-      text,
-      value: text,
-      quoted: false,
-      linePos,
-      pos,
-    };
-    tokens.push(tok);
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      dotToken = {
+        type: ExprTokenType.DOT,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    if (dotToken) {
+      tokens.push(dotToken);
+    }
     return tokens;
   }
 
   // handle opening "("
   if (ch === "(" && !state.afterParen) {
-    // skip "(" sign
-    state.pos = advance(state);
-    // loop until ")" mark
-    const start = state.pos;
-    const { raw, text } = readUntilClose(state, start, "(", ")");
-    const value = text;
-    const pos: Pos = [start, state.pos];
-    mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: ExprToken = {
-      type: ExprTokenType.ARGS,
-      raw,
-      text,
-      value,
-      quoted: false,
-      linePos,
-      pos,
-    };
-    tokens.push(tok);
-    // skip "(" sign
-    state.pos = advance(state);
-    state.afterParen = true;
-    // return
+    // make open mark token
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      omToken = {
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    // read arguments until ")" mark
+    start = state.pos;
+    readValue = readUntilClose(state, start, "(", ")");
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      argsToken = {
+        type: ExprTokenType.ARGS,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    // make close mark token
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      if (parentTok) mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      cmToken = {
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+    }
+    // if main token (arguments token) is present push it
+    if (argsToken) {
+      argsToken.argsMarkOpen = omToken;
+      argsToken.argsMarkClose = cmToken;
+      tokens.push(argsToken);
+      // set after paren to true to prevent identifying other arguments block in the expression
+      state.afterParen = true;
+    }
     return tokens;
   }
 
   // if whitespace return white space token and every text after it will be type token
   if (/\s/.test(ch)) {
     // handle white space token
-    let start = state.pos;
-    const { raw: wRaw, text: wText } = readUntilChar(state, start, /\s/, true);
-    const wPos: Pos = [start, state.pos];
-    mergeTokenPosition(wPos, parentTok);
-    const wLinePos = getLinePosFromRange(tempState.lineStarts, wPos);
-    const wTok: ExprToken = {
-      type: ExprTokenType.WHITE_SPACE,
-      raw: wRaw,
-      text: wText,
-      value: wText,
-      quoted: false,
-      linePos: wLinePos,
-      pos: wPos,
-    };
-    tokens.push(wTok);
-    state.afterWhiteSpace = true;
+    start = state.pos;
+    readValue = readUntilChar(state, start, /\s/, true);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      wsToken = {
+        type: ExprTokenType.WHITE_SPACE,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+      tokens.push(wsToken);
+      // set white space to true to prevent identifying other white spaces in expression
+      state.afterWhiteSpace = true;
+    }
+
     // handle type token
     start = state.pos;
-    const { raw: tRaw, text: tText } = read(state, start, Infinity);
-    const tPos: Pos = [start, state.pos];
-    mergeTokenPosition(tPos, parentTok);
-    const tLnePos = getLinePosFromRange(tempState.lineStarts, tPos);
-    const exprTok: ExprToken = {
-      type: ExprTokenType.TYPE,
-      raw: tRaw,
-      text: tText,
-      value: tText,
-      quoted: false,
-      linePos: tLnePos,
-      pos: tPos,
-    };
-    tokens.push(exprTok);
+    readValue = read(state, start, Infinity);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      typeToken = {
+        type: ExprTokenType.TYPE,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+      tokens.push(typeToken);
+    }
     return tokens;
   }
 
@@ -179,15 +247,16 @@ function readQuotedPath(
 ): ExprToken[] {
   let tokens: ExprToken[] = [];
   const start = state.pos;
-  const { raw, text } = readUntilChar(state, start, current(state));
-  const value = text;
+  const readValue = readUntilChar(state, start, current(state));
+  if (!readValue) return [];
+  const value = readValue.text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
   const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: ExprToken = {
     type: ExprTokenType.PATH,
-    raw,
-    text,
+    raw: readValue.raw,
+    text: readValue.text,
     value,
     quoted: true,
     linePos,

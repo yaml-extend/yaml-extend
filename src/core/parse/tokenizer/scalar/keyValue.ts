@@ -12,6 +12,8 @@ import {
   type ArgsToken,
   type TokenizeTextFunc,
   Pos,
+  RawToken,
+  LinePos,
 } from "../tokenizerTypes.js";
 import { getLinePosFromRange, getValueFromText } from "../../utils/random.js";
 import { TempParseState } from "../../parseTypes.js";
@@ -58,13 +60,24 @@ function nextArgsToken(
   // tokens array
   let tokens: KeyValueToken[] = [];
 
+  // define tokens
+  let eofToken: KeyValueToken | undefined;
+  let equalToken: KeyValueToken | undefined;
+
+  // define vars
+  let start: number;
+  let readValue: { raw: string; text: string } | undefined;
+  let value: string;
+  let pos: Pos;
+  let linePos: [LinePos, LinePos] | undefined;
+
   // if eof reutnr last token
   if (eof(state)) {
-    const start = state.pos;
-    const pos: Pos = [start, state.pos];
+    start = state.pos;
+    pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: KeyValueToken = {
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    eofToken = {
       type: KeyValueTokenType.EOF,
       raw: "",
       text: "",
@@ -73,29 +86,31 @@ function nextArgsToken(
       linePos,
       pos,
     };
-    tokens.push(tok);
+    tokens.push(eofToken);
     return tokens;
   }
 
   if (ch === "=") {
-    const start = state.pos;
-    const { raw, text } = read(state, start, 1);
-    const value = text;
-    const pos: Pos = [start, state.pos];
-    mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: KeyValueToken = {
-      type: KeyValueTokenType.EQUAL,
-      raw,
-      text,
-      value,
-      quoted: false,
-      linePos,
-      pos,
-    };
-    tokens.push(tok);
-    state.afterEqual = true;
-    tokens;
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      equalToken = {
+        type: KeyValueTokenType.EQUAL,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+      tokens.push(equalToken);
+      state.afterEqual = true;
+    }
+    return tokens;
   }
 
   if (ch === '"' || ch === "'") return readQuoted(state, tempState, parentTok);
@@ -109,16 +124,18 @@ function readQuoted(
 ): KeyValueToken[] {
   let tokens: KeyValueToken[] = [];
   const start = state.pos;
-  const { raw, text } = readUntilChar(state, start, current(state));
-  if (!text) return tokens; // if only white space omit token
-  const value = state.afterEqual ? getValueFromText(text) : text;
+  const readValue = readUntilChar(state, start, current(state));
+  if (!readValue) return tokens; // if only white space omit token
+  const value = state.afterEqual
+    ? getValueFromText(readValue.text)
+    : readValue.text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
   const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: KeyValueToken = {
     type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
-    raw,
-    text,
+    raw: readValue.raw,
+    text: readValue.text,
     value,
     quoted: true,
     linePos,
@@ -136,16 +153,18 @@ function readUnQuoted(
 ): KeyValueToken[] {
   let tokens: KeyValueToken[] = [];
   const start = state.pos;
-  const { raw, text } = readUntilChar(state, start, ["=", ","]);
-  if (!text) return tokens; // if only white space omit token
-  const value = state.afterEqual ? getValueFromText(text) : text;
+  const readValue = readUntilChar(state, start, ["=", ","]);
+  if (!readValue) return tokens; // if only white space omit token
+  const value = state.afterEqual
+    ? getValueFromText(readValue.text)
+    : readValue.text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
   const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: KeyValueToken = {
     type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
-    raw,
-    text,
+    raw: readValue.raw,
+    text: readValue.text,
     value,
     quoted: false,
     linePos,

@@ -222,13 +222,17 @@ type TextToken = RawToken<string> & {
     depth: number;
     freeExpr: boolean;
     exprTokens?: ExprToken[];
+    exprMarkOpen?: RawToken<string>;
+    exprMarkClose?: RawToken<string>;
 };
 /**
  * Expression token from expression step of scalar tokenizer
  */
 type ExprToken = RawToken<string> & {
     type: ExprTokenType;
-    argTokens?: ArgsToken[];
+    argsTokens?: ArgsToken[];
+    argsMarkOpen?: RawToken<string>;
+    argsMarkClose?: RawToken<string>;
 };
 /**
  * Arguments token from arguments step of scalar tokenizer

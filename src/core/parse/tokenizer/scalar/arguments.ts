@@ -11,7 +11,9 @@ import {
   ArgsTokenType,
   type ArgsTokenizerState,
   type ExprToken,
+  LinePos,
   Pos,
+  RawToken,
   type TokenizeTextFunc,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
@@ -60,13 +62,25 @@ function nextArgsToken(
   // tokens array
   let tokens: ArgsToken[] = [];
 
+  // define tokens
+  let eofToken: ArgsToken | undefined;
+  let commaToken: ArgsToken | undefined;
+  let keyValueToken: ArgsToken | undefined;
+
+  // define vars
+  let start: number;
+  let readValue: { raw: string; text: string } | undefined;
+  let value: string;
+  let pos: Pos;
+  let linePos: [LinePos, LinePos] | undefined;
+
   // if eof reutnr last token
   if (eof(state)) {
-    const start = state.pos;
-    const pos: Pos = [start, state.pos];
+    start = state.pos;
+    pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: ArgsToken = {
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    eofToken = {
       type: ArgsTokenType.EOF,
       raw: "",
       text: "",
@@ -75,47 +89,51 @@ function nextArgsToken(
       linePos,
       pos,
     };
-    tokens.push(tok);
+    tokens.push(eofToken);
     return tokens;
   }
 
   if (ch === ",") {
-    const start = state.pos;
-    const { raw, text } = read(state, start, 1);
-    const value = text;
-    const pos: Pos = [start, state.pos];
+    start = state.pos;
+    readValue = read(state, start, 1);
+    if (readValue) {
+      value = readValue.text;
+      pos = [start, state.pos];
+      mergeTokenPosition(pos, parentTok);
+      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      commaToken = {
+        type: ArgsTokenType.COMMA,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+      };
+      tokens.push(commaToken);
+    }
+    return tokens;
+  }
+
+  // handle KeyValue pair token
+  start = state.pos;
+  readValue = readUntilChar(state, start, ",");
+  if (readValue) {
+    value = readValue.text;
+    pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    const tok: ArgsToken = {
-      type: ArgsTokenType.COMMA,
-      raw,
-      text,
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    keyValueToken = {
+      type: ArgsTokenType.KEY_VALUE,
+      raw: readValue.raw,
+      text: readValue.text,
       value,
       quoted: false,
       linePos,
       pos,
     };
-    tokens.push(tok);
-    return tokens;
+    tokens.push(keyValueToken);
   }
-
-  // handle KeyValue pair token
-  const start = state.pos;
-  const { raw, text } = readUntilChar(state, start, ",");
-  const value = text;
-  const pos: Pos = [start, state.pos];
-  mergeTokenPosition(pos, parentTok);
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
-  const tok: ArgsToken = {
-    type: ArgsTokenType.KEY_VALUE,
-    raw,
-    text,
-    value,
-    quoted: false,
-    linePos,
-    pos,
-  };
-  tokens.push(tok);
 
   return tokens;
 }

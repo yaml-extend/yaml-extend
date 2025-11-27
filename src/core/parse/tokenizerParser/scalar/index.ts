@@ -163,7 +163,7 @@ async function handleExprTokens(
       }
       ctx.argsDefined = true;
       // handle args
-      const args = await handleArgTokens(tok.argTokens, state, tempState);
+      const args = await handleArgTokens(tok.argsTokens, state, tempState);
       ctx.args ??= { argsObj: {}, tok };
       for (const [k, v] of Object.entries(args)) ctx.args.argsObj[k] = v;
     }

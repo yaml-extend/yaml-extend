@@ -38,7 +38,8 @@ export function readUntilClose<S extends BasicState>(
   openChar: string,
   closeChar: string,
   ignoreTextTrim?: boolean
-): { raw: string; text: string } {
+): { raw: string; text: string } | undefined {
+  if (eof(state)) return;
   let out = "";
   let depth = 0;
   const checkOpen =
@@ -92,7 +93,8 @@ export function read<S extends BasicState>(
   start: number,
   steps: number,
   ignoreTextTrim?: boolean
-): { raw: string; text: string } {
+): { raw: string; text: string } | undefined {
+  if (eof(state)) return;
   state.pos = advance(state, steps);
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? raw : raw.trim();
@@ -104,7 +106,8 @@ export function readUntilChar<S extends BasicState>(
   start: number,
   stopChar: string | string[] | RegExp,
   ignoreTextTrim?: boolean
-): { raw: string; text: string } {
+): { raw: string; text: string } | undefined {
+  if (eof(state)) return;
   let out = "";
   const checkStop =
     stopChar instanceof RegExp

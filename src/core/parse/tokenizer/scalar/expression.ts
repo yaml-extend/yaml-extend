@@ -35,7 +35,6 @@ export function tokenizeExpr(
   let state = initExprTokenState(input);
   while (true) {
     const toks = nextExprToken(state, tempState, textTok);
-    console.dir(toks, { depth: 10 });
     tokens.push(...toks);
     if (tokens[tokens.length - 1].type === ExprTokenType.EOF) break;
   }

@@ -1,14 +1,4 @@
 import { LinePos } from "../tokenizer/tokenizerTypes.js";
-import { createHash } from "crypto";
-
-/**
- * Function to hash string.
- * @param str - String that will be hashed.
- * @returns Hash of the string.
- */
-export function hashStr(str: string): string {
-  return createHash("sha256").update(str).digest().toString("hex");
-}
 
 export function getValueFromText(text: string): unknown {
   // if empty string return null

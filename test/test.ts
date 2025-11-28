@@ -7,5 +7,6 @@ const parser = new LiveParser({
   ignoreTags: true,
 });
 const parsed1 = await parser.parse("./test/test.yaml");
-
-// console.debug(parsed1.errors)
+const parsed2 = await parser.parse("./test");
+console.debug(parsed1.parse, parsed1.errors);
+console.debug(parsed2.parse, parsed2.errors);

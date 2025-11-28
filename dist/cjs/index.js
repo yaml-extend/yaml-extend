@@ -2450,7 +2450,7 @@ async function importModule(targetPath, targetParams, state, tempState) {
     const clonedOptions = deepClone(tempState.options);
     clonedOptions.params = targetParams;
     // load str
-    const parseData = await tempState.parseFunc(targetPath, clonedOptions, state);
+    const parseData = await tempState.parseFunc(targetPath, clonedOptions, undefined, state);
     // push any errors
     tempState.importedErrors.push(...parseData.errors);
     // return load
@@ -3186,17 +3186,20 @@ class DependencyHandler {
  *
  * @param path - Path of YAML file in filesystem.
  * @param options - Options object passed to control parser behavior.
+ * @param source - Optional field to use supplied source in place of filesystem read by parser.
  * @param state - For internal use don't pass any thing here.
  * @returns Object that hold parse value along with errors thrown in this YAML file and errors thrown in imported YAML files.
  */
-async function parseExtend(path, options = {}, state) {
+async function parseExtend(path, options = {}, source, state) {
     var _a, _b;
     // init state and temp state
     const s = initState(state);
     const ts = initTempState(path, options);
     try {
         // verify path
-        if (!verifyPath(ts.resolvedPath, ts).status)
+        const { status, errorMessage } = verifyPath(ts.resolvedPath, ts);
+        if (!status) {
+            ts.errors.push(new YAMLExprError([0, 0], "", errorMessage));
             return {
                 parse: undefined,
                 errors: ts.errors,
@@ -3204,8 +3207,12 @@ async function parseExtend(path, options = {}, state) {
                 state: ts.options.returnState ? s : undefined,
                 cache: undefined,
             };
+        }
         // read file and add source and lineStarts to tempState
-        ts.source = await promises.readFile(ts.resolvedPath, { encoding: "utf8" });
+        ts.source =
+            source != undefined
+                ? source
+                : await promises.readFile(ts.resolvedPath, { encoding: "utf8" });
         ts.lineStarts = getLineStarts(ts.source);
         // handle module cache
         await handleModuleCache(s, ts);
@@ -3331,7 +3338,7 @@ async function handleImports(state, tempState, cache) {
         if (!path)
             continue;
         const copyOptions = deepClone(tempState.options);
-        await parseExtend(path, { ...copyOptions, params }, state);
+        await parseExtend(path, { ...copyOptions, params }, undefined, state);
     }
 }
 
@@ -3365,26 +3372,32 @@ class LiveParser {
     /**
      * Method to parse YAML file at specific path.
      * @param path - Path that will be parsed.
+     * @param source - Optional field to use supplied source in place of filesystem read by parser.
      * @returns Parse value of this path.
      */
-    async parse(path) {
+    async parse(path, source) {
         if (this._isDestroyed)
             throw new Error("LiveParser class is destroyed.");
         // add path as entry point
         this.state.dependency.addDep(path, true);
         // check cache, if present return directly
         const cache = getModuleCache(this.state, path);
-        if (cache) {
-            const parseEntery = getParseEntery(cache, this._options.universalParams);
-            if (parseEntery)
-                return {
-                    ...parseEntery,
-                    state: this._options.returnState ? this.state : undefined,
-                    cache: this._options.returnState ? cache : undefined,
-                };
-        }
-        // parse and return value
-        return await parseExtend(path, this._options, this.state);
+        // if no cache parse and return
+        if (!cache)
+            return await parseExtend(path, this._options, source, this.state);
+        // if source supplied and hash changed parse and return
+        if (source && hashStr(source) !== cache.sourceHash)
+            return await parseExtend(path, this._options, source, this.state);
+        // get parse entry and if not present parse and return
+        const parseEntery = getParseEntery(cache, this._options.universalParams);
+        if (!parseEntery)
+            return await parseExtend(path, this._options, source, this.state);
+        // return parse entry
+        return {
+            ...parseEntery,
+            state: this._options.returnState ? this.state : undefined,
+            cache: this._options.returnState ? cache : undefined,
+        };
     }
     /**
      * Method to delete path as an entry point.

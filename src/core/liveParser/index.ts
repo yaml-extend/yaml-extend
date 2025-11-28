@@ -6,6 +6,7 @@ import {
   purgeCache,
   resetCache,
 } from "../parse/utils/cache.js";
+import { hashStr } from "../parse/utils/hash.js";
 
 /**
  * Class to preserve state along parsing multiple entry paths.
@@ -46,25 +47,34 @@ export class LiveParser {
   /**
    * Method to parse YAML file at specific path.
    * @param path - Path that will be parsed.
+   * @param source - Optional field to use supplied source in place of filesystem read by parser.
    * @returns Parse value of this path.
    */
-  async parse(path: string): Promise<Awaited<ReturnType<ParseExtend>>> {
+  async parse(
+    path: string,
+    source?: string
+  ): Promise<Awaited<ReturnType<ParseExtend>>> {
     if (this._isDestroyed) throw new Error("LiveParser class is destroyed.");
     // add path as entry point
     this.state.dependency.addDep(path, true);
     // check cache, if present return directly
     const cache = getModuleCache(this.state, path);
-    if (cache) {
-      const parseEntery = getParseEntery(cache, this._options.universalParams);
-      if (parseEntery)
-        return {
-          ...parseEntery,
-          state: this._options.returnState ? this.state : undefined,
-          cache: this._options.returnState ? cache : undefined,
-        };
-    }
-    // parse and return value
-    return await parseExtend(path, this._options, this.state);
+    // if no cache parse and return
+    if (!cache)
+      return await parseExtend(path, this._options, source, this.state);
+    // if source supplied and hash changed parse and return
+    if (source && hashStr(source) !== cache.sourceHash)
+      return await parseExtend(path, this._options, source, this.state);
+    // get parse entry and if not present parse and return
+    const parseEntery = getParseEntery(cache, this._options.universalParams);
+    if (!parseEntery)
+      return await parseExtend(path, this._options, source, this.state);
+    // return parse entry
+    return {
+      ...parseEntery,
+      state: this._options.returnState ? this.state : undefined,
+      cache: this._options.returnState ? cache : undefined,
+    };
   }
 
   /**

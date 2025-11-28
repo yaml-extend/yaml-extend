@@ -30,6 +30,7 @@ import { YAMLError, YAMLExprError } from "../extendClasses/error.js";
 export async function parseExtend(
   path: string,
   options: Options & { returnState?: true },
+  source?: string,
   state?: ParseState
 ): Promise<{
   parse: unknown;
@@ -41,6 +42,7 @@ export async function parseExtend(
 export async function parseExtend(
   path: string,
   options: Options & { returnState?: false | undefined },
+  source?: string,
   state?: ParseState
 ): Promise<{
   parse: unknown;
@@ -52,6 +54,7 @@ export async function parseExtend(
 export async function parseExtend(
   path: string,
   options?: Options & { returnState?: boolean | undefined },
+  source?: string,
   state?: ParseState
 ): Promise<{
   parse: unknown;
@@ -64,12 +67,14 @@ export async function parseExtend(
  *
  * @param path - Path of YAML file in filesystem.
  * @param options - Options object passed to control parser behavior.
+ * @param source - Optional field to use supplied source in place of filesystem read by parser.
  * @param state - For internal use don't pass any thing here.
  * @returns Object that hold parse value along with errors thrown in this YAML file and errors thrown in imported YAML files.
  */
 export async function parseExtend(
   path: string,
   options: Options = {},
+  source?: string,
   state?: ParseState
 ): Promise<{
   parse: unknown;
@@ -84,7 +89,9 @@ export async function parseExtend(
 
   try {
     // verify path
-    if (!verifyPath(ts.resolvedPath, ts).status)
+    const { status, errorMessage } = verifyPath(ts.resolvedPath, ts);
+    if (!status) {
+      ts.errors.push(new YAMLExprError([0, 0], "", errorMessage));
       return {
         parse: undefined,
         errors: ts.errors,
@@ -92,9 +99,13 @@ export async function parseExtend(
         state: ts.options.returnState ? s : undefined,
         cache: undefined,
       };
+    }
 
     // read file and add source and lineStarts to tempState
-    ts.source = await readFile(ts.resolvedPath, { encoding: "utf8" });
+    ts.source =
+      source != undefined
+        ? source
+        : await readFile(ts.resolvedPath, { encoding: "utf8" });
     ts.lineStarts = getLineStarts(ts.source);
 
     // handle module cache
@@ -240,6 +251,6 @@ async function handleImports(
     const path = i.path;
     if (!path) continue;
     const copyOptions = deepClone(tempState.options);
-    await parseExtend(path, { ...copyOptions, params }, state);
+    await parseExtend(path, { ...copyOptions, params }, undefined, state);
   }
 }

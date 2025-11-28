@@ -390,7 +390,7 @@ type Cache = Map<string, ModuleCache>;
 
 declare function parseExtend(path: string, options: Options & {
     returnState?: true;
-}, state?: ParseState): Promise<{
+}, source?: string, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
@@ -399,7 +399,7 @@ declare function parseExtend(path: string, options: Options & {
 }>;
 declare function parseExtend(path: string, options: Options & {
     returnState?: false | undefined;
-}, state?: ParseState): Promise<{
+}, source?: string, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
@@ -408,7 +408,7 @@ declare function parseExtend(path: string, options: Options & {
 }>;
 declare function parseExtend(path: string, options?: Options & {
     returnState?: boolean | undefined;
-}, state?: ParseState): Promise<{
+}, source?: string, state?: ParseState): Promise<{
     parse: unknown;
     errors: YAMLError[];
     importedErrors: YAMLError[];
@@ -439,9 +439,10 @@ declare class LiveParser {
     /**
      * Method to parse YAML file at specific path.
      * @param path - Path that will be parsed.
+     * @param source - Optional field to use supplied source in place of filesystem read by parser.
      * @returns Parse value of this path.
      */
-    parse(path: string): Promise<Awaited<ReturnType<ParseExtend>>>;
+    parse(path: string, source?: string): Promise<Awaited<ReturnType<ParseExtend>>>;
     /**
      * Method to delete path as an entry point.
      * @param path - Path the will be deleted.

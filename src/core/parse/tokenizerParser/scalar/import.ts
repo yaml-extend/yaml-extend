@@ -71,7 +71,12 @@ async function importModule(
   clonedOptions.params = targetParams;
 
   // load str
-  const parseData = await tempState.parseFunc(targetPath, clonedOptions, state);
+  const parseData = await tempState.parseFunc(
+    targetPath,
+    clonedOptions,
+    undefined,
+    state
+  );
   // push any errors
   tempState.importedErrors.push(...parseData.errors);
 

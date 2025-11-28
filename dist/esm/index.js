@@ -1873,7 +1873,7 @@ function nextExprToken(state, tempState, parentTok) {
     if (/\s/.test(ch)) {
         // handle white space token
         start = state.pos;
-        readValue = readUntilChar(state, start, /\s/, true);
+        readValue = readUntilChar(state, start, /\S/, true);
         if (readValue) {
             value = readValue.text;
             pos = [start, state.pos];

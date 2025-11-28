@@ -1,22 +1,11 @@
-%FILENAME test1
-# %IMPORT dd ./test2.yml
-%LOCAL gg
-%LOCAL mm
-%PARAM ll
-%PRIVATE node111.node7
+%PARAM kk kkboy
+%PRIVATE k
 ---
-# node: value
+data:
+  node1: gg
+  node2:
+    - { name: ziad }
+    - ziad
+  node with sapce: value
 
-# node 5:
-#   "node.6":
-#     node7: value
-
-# node2: $this.node
-
-# node3: $import.dd.data."node with sapce" ll=ff
-
-# node111: { $this."node 5"."node.6" }
-
-# node99: $import.dd.data ll=mm
-
-mm: text ${ expression } text
+k: $param.kk(df = fef) as key

@@ -8,4 +8,4 @@ const parser = new LiveParser({
 });
 const parsed1 = await parser.parse("./test/test.yaml");
 
-console.debug(parsed1.errors);
+// console.debug(parsed1.errors)

@@ -201,7 +201,6 @@ export function initState(state?: ParseState): ParseState {
         cache: new Map(),
         dependency: new DependencyHandler(),
         depth: -1,
-        parsedPaths: [],
       };
   // increment depth and return the state
   s.depth++;

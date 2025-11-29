@@ -7,6 +7,7 @@ import {
   readUntilClose,
   read,
   readUntilChar,
+  advance,
 } from "./helpers.js";
 import { tokenizeExpr } from "./expression.js";
 import {
@@ -31,6 +32,7 @@ export function tokenizeText(
   // handle tokens
   let state = initTextTokenizerState(input);
   let tokens: TextToken[] = [];
+  while (!eof(state) && /\s/.test(current(state))) state.pos = advance(state); // skip white space at the start
   while (true) {
     const toks = nextTextToken(state, tempState, keyValueTok, depth);
     tokens.push(...toks);
@@ -44,7 +46,7 @@ export function tokenizeText(
   for (const t of tokens)
     if (t.type === TextTokenType.EXPR)
       t.exprTokens = tokenizeExpr(
-        t.raw ? t.raw.trim() : "",
+        t.raw ?? "",
         t,
         tempState,
         depth,
@@ -79,7 +81,7 @@ function nextTextToken(
 
   // define vars
   let start: number;
-  let readValue: { raw: string; text: string } | undefined;
+  let readValue: { raw: string; text: string; present: boolean };
   let value: string;
   let pos: Pos;
   let linePos: [LinePos, LinePos] | undefined;
@@ -111,46 +113,43 @@ function nextTextToken(
     // make open mark token
     start = state.pos;
     readValue = read(state, start, 2);
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      if (depth === 0) mergeScalarPosition(pos, tempState);
-      if (parentTok) mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
-      omToken = {
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-      };
-    }
+    value = readValue.text;
+    pos = [start, state.pos];
+    if (depth === 0) mergeScalarPosition(pos, tempState);
+    if (parentTok) mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    omToken = {
+      raw: readValue.raw,
+      text: readValue.text,
+      value,
+      quoted: false,
+      linePos,
+      pos,
+    };
+
     // read expression until "}" mark
     start = state.pos;
     readValue = readUntilClose(state, start, "${", "}");
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      if (depth === 0) mergeScalarPosition(pos, tempState);
-      if (parentTok) mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
-      exprToken = {
-        type: TextTokenType.EXPR,
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-        freeExpr: false,
-        depth,
-      };
-    }
+    value = readValue.text;
+    pos = [start, state.pos];
+    if (depth === 0) mergeScalarPosition(pos, tempState);
+    if (parentTok) mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    exprToken = {
+      type: TextTokenType.EXPR,
+      raw: readValue.raw,
+      text: readValue.text,
+      value,
+      quoted: false,
+      linePos,
+      pos,
+      freeExpr: false,
+      depth,
+    };
     // make close mark token
     start = state.pos;
     readValue = read(state, start, 1);
-    if (readValue) {
+    if (readValue.present) {
       value = readValue.text;
       pos = [start, state.pos];
       if (depth === 0) mergeScalarPosition(pos, tempState);
@@ -166,11 +165,10 @@ function nextTextToken(
       };
     }
     // if main token (expression token) is present push it
-    if (exprToken) {
-      exprToken.exprMarkOpen = omToken;
-      exprToken.exprMarkClose = cmToken;
-      tokens.push(exprToken);
-    }
+    exprToken.exprMarkOpen = omToken;
+    exprToken.exprMarkClose = cmToken;
+    tokens.push(exprToken);
+
     return tokens;
   }
 
@@ -179,72 +177,65 @@ function nextTextToken(
     // make "$" mark token
     start = state.pos;
     readValue = read(state, start, 1);
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      if (depth === 0) mergeScalarPosition(pos, tempState);
-      if (parentTok) mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
-      omToken = {
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-      };
-    }
-    // handle expr token (read until end of the input)
-    start = state.pos;
-    readValue = read(state, start, Infinity);
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      if (depth === 0) mergeScalarPosition(pos, tempState);
-      if (parentTok) mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
-      exprToken = {
-        type: TextTokenType.EXPR,
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-        freeExpr: true,
-        depth,
-      };
-    }
-    // if main token (expression token) is present push it
-    if (exprToken) {
-      exprToken.exprMarkOpen = omToken;
-      tokens.push(exprToken);
-    }
-    return tokens;
-  }
-
-  // read until first interpolation mark "${"
-  start = state.pos;
-  readValue = readUntilChar(state, start, "${", true);
-  if (readValue) {
     value = readValue.text;
     pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
     linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    textToken = {
-      type: TextTokenType.TEXT,
+    omToken = {
       raw: readValue.raw,
       text: readValue.text,
       value,
       quoted: false,
       linePos,
       pos,
-      freeExpr: false,
+    };
+    // handle expr token (read until end of the input)
+    start = state.pos;
+    readValue = read(state, start, Infinity);
+    value = readValue.text;
+    pos = [start, state.pos];
+    if (depth === 0) mergeScalarPosition(pos, tempState);
+    if (parentTok) mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    exprToken = {
+      type: TextTokenType.EXPR,
+      raw: readValue.raw,
+      text: readValue.text,
+      value,
+      quoted: false,
+      linePos,
+      pos,
+      freeExpr: true,
       depth,
     };
+    // if main token (expression token) is present push it
+    exprToken.exprMarkOpen = omToken;
+    tokens.push(exprToken);
+
+    return tokens;
   }
-  if (textToken) tokens.push(textToken);
+
+  // read until first interpolation mark "${"
+  start = state.pos;
+  readValue = readUntilChar(state, start, "${", true);
+  value = readValue.text;
+  pos = [start, state.pos];
+  if (depth === 0) mergeScalarPosition(pos, tempState);
+  if (parentTok) mergeTokenPosition(pos, parentTok);
+  linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  textToken = {
+    type: TextTokenType.TEXT,
+    raw: readValue.raw,
+    text: readValue.text,
+    value,
+    quoted: false,
+    linePos,
+    pos,
+    freeExpr: false,
+    depth,
+  };
+  tokens.push(textToken);
 
   return tokens;
 }

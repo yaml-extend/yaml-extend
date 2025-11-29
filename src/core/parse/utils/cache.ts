@@ -66,7 +66,6 @@ async function initModuleCache(state: ParseState, tempState: TempParseState) {
     directives,
     resolvedPath: tempState.resolvedPath,
     sourceHash,
-    scalarTokens: {},
     AST,
   };
   // save new cache in the state

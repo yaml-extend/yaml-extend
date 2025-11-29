@@ -1,4 +1,4 @@
-import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, DocumentOptions, SchemaOptions, ToJSOptions, Scalar, Alias, YAMLMap, YAMLSeq } from 'yaml';
+import { YAMLError as YAMLError$1, ErrorCode as ErrorCode$1, ParseOptions, DocumentOptions, SchemaOptions, ToJSOptions, Alias, Scalar, YAMLMap, YAMLSeq } from 'yaml';
 export { CollectionTag, CreateNodeOptions, DocumentOptions, ParseOptions, ScalarTag, Schema, SchemaOptions, TagId, Tags, ToJSOptions, ToStringOptions } from 'yaml';
 
 /**
@@ -183,6 +183,7 @@ declare enum TextTokenType {
  * Token types from expression step of scalar tokenizer
  */
 declare enum ExprTokenType {
+    BASE = "BASE",
     PATH = "PATH",
     DOT = "DOT",
     ARGS = "ARGS",
@@ -217,6 +218,7 @@ type TextToken = RawToken<string> & {
     exprTokens?: ExprToken[];
     exprMarkOpen?: RawToken<string>;
     exprMarkClose?: RawToken<string>;
+    resolvedValue?: unknown;
 };
 /**
  * Expression token from expression step of scalar tokenizer
@@ -226,7 +228,6 @@ type ExprToken = RawToken<string> & {
     argsTokens?: ArgsToken[];
     argsMarkOpen?: RawToken<string>;
     argsMarkClose?: RawToken<string>;
-    isBase?: boolean;
 };
 /**
  * Arguments token from arguments step of scalar tokenizer
@@ -320,8 +321,6 @@ type ParseState = {
     dependency: DependencyHandler;
     /** Internally used only. */
     depth: number;
-    /** Array of paths parsed by order. */
-    parsedPaths: string[];
 };
 /**
  * Additional options that can be passed to parse function used by extend module.
@@ -375,11 +374,6 @@ type ModuleCache = {
     resolvedPath: string;
     /** Hash computed from `source` (used to detect changes / cache misses). */
     sourceHash: string;
-    /** Tokens for each scalar text */
-    scalarTokens: Record<string, {
-        scalars: Scalar[];
-        tokens: TextToken[];
-    }>;
     /** Abstract Syntax Tree of this YAML file loaded using "yaml" library. */
     AST: Alias | Scalar | YAMLMap | YAMLSeq | null;
 };

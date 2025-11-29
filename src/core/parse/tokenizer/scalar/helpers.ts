@@ -38,8 +38,8 @@ export function readUntilClose<S extends BasicState>(
   openChar: string,
   closeChar: string,
   ignoreTextTrim?: boolean
-): { raw: string; text: string } | undefined {
-  if (eof(state)) return;
+): { raw: string; text: string; present: boolean } {
+  if (eof(state)) return { raw: "", text: "", present: false };
   let out = "";
   let depth = 0;
   const checkOpen =
@@ -85,7 +85,7 @@ export function readUntilClose<S extends BasicState>(
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? out : out.trim();
 
-  return { raw, text };
+  return { raw, text, present: true };
 }
 
 export function read<S extends BasicState>(
@@ -93,27 +93,25 @@ export function read<S extends BasicState>(
   start: number,
   steps: number,
   ignoreTextTrim?: boolean
-): { raw: string; text: string } | undefined {
-  if (eof(state)) return;
+): { raw: string; text: string; present: boolean } {
+  if (eof(state)) return { raw: "", text: "", present: false };
   state.pos = advance(state, steps);
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? raw : raw.trim();
-  return { raw, text };
+  return { raw, text, present: true };
 }
 
 export function readUntilChar<S extends BasicState>(
   state: S,
   start: number,
-  stopChar: string | string[] | RegExp,
+  stopChar: string | RegExp,
   ignoreTextTrim?: boolean
-): { raw: string; text: string } | undefined {
-  if (eof(state)) return;
+): { raw: string; text: string; present: boolean } {
+  if (eof(state)) return { raw: "", text: "", present: false };
   let out = "";
   const checkStop =
     stopChar instanceof RegExp
       ? (ch: string) => stopChar.test(ch)
-      : Array.isArray(stopChar)
-      ? (ch: string) => stopChar.includes(ch)
       : stopChar.length > 1
       ? () => peek(state, stopChar.length) === stopChar
       : (ch: string) => ch === stopChar;
@@ -147,7 +145,7 @@ export function readUntilChar<S extends BasicState>(
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? out : out.trim();
 
-  return { raw, text };
+  return { raw, text, present: true };
 }
 
 export function readUntilCharInclusive<S extends BasicState>(
@@ -155,8 +153,8 @@ export function readUntilCharInclusive<S extends BasicState>(
   start: number,
   stopChar: string | string[] | RegExp,
   ignoreTextTrim?: boolean
-) {
-  if (eof(state)) return;
+): { raw: string; text: string; present: boolean } {
+  if (eof(state)) return { raw: "", text: "", present: false };
   let out = "";
   const checkStop =
     stopChar instanceof RegExp
@@ -203,5 +201,5 @@ export function readUntilCharInclusive<S extends BasicState>(
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? out : out.trim();
 
-  return { raw, text };
+  return { raw, text, present: true };
 }

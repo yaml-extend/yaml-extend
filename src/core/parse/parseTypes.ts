@@ -39,8 +39,6 @@ export type ParseState = {
   dependency: DependencyHandler;
   /** Internally used only. */
   depth: number;
-  /** Array of paths parsed by order. */
-  parsedPaths: string[];
 };
 
 /**
@@ -126,8 +124,6 @@ export type ModuleCache = {
   resolvedPath: string;
   /** Hash computed from `source` (used to detect changes / cache misses). */
   sourceHash: string;
-  /** Tokens for each scalar text */
-  scalarTokens: Record<string, { scalars: Scalar[]; tokens: TextToken[] }>;
   /** Abstract Syntax Tree of this YAML file loaded using "yaml" library. */
   AST: Alias | Scalar | YAMLMap | YAMLSeq | null;
 };

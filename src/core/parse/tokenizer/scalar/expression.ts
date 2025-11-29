@@ -33,6 +33,7 @@ export function tokenizeExpr(
   // handle tokens
   let tokens: ExprToken[] = [];
   let state = initExprTokenState(input);
+  while (!eof(state) && /\s/.test(current(state))) state.pos = advance(state); // skip white space at the start
   while (true) {
     const toks = nextExprToken(state, tempState, textTok);
     tokens.push(...toks);
@@ -43,7 +44,7 @@ export function tokenizeExpr(
   for (const t of tokens)
     if (t.type === ExprTokenType.ARGS)
       t.argsTokens = tokenizeArgs(
-        t.raw ? t.raw.trim() : "",
+        t.raw ?? "",
         t,
         tempState,
         depth,
@@ -255,14 +256,13 @@ function readQuotedPath(
   mergeTokenPosition(pos, parentTok);
   const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: ExprToken = {
-    type: ExprTokenType.PATH,
+    type: state.baseDefined ? ExprTokenType.PATH : ExprTokenType.BASE,
     raw: readValue.raw,
     text: readValue.text,
     value,
     quoted: true,
     linePos,
     pos,
-    isBase: state.baseDefined ? false : true,
   };
   tokens.push(tok);
   state.baseDefined = true; // set baseDefined to true so only first path is defined as base
@@ -312,14 +312,13 @@ function readPath(
   mergeTokenPosition(pos, parentTok);
   const linePos = getLinePosFromRange(tempState.lineStarts, pos);
   const tok: ExprToken = {
-    type: ExprTokenType.PATH,
+    type: state.baseDefined ? ExprTokenType.PATH : ExprTokenType.BASE,
     raw,
     text,
     value,
     quoted: false,
     linePos,
     pos,
-    isBase: state.baseDefined ? false : true,
   };
   tokens.push(tok);
   state.baseDefined = true; // set baseDefined to true so only first path is defined as base

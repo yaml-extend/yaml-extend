@@ -39,12 +39,7 @@ export function tokenizeKeyValue(
   // resolve any value tokens using text tokenizer
   for (const t of tokens)
     if (t.type === KeyValueTokenType.VALUE)
-      t.valueToks = tokenizeTextFunc(
-        t.raw ? t.raw.trim() : "",
-        t,
-        tempState,
-        depth
-      );
+      t.valueToks = tokenizeTextFunc(t.raw ?? "", t, tempState, depth);
 
   // return
   return tokens;
@@ -154,7 +149,7 @@ function readUnQuoted(
 ): KeyValueToken[] {
   let tokens: KeyValueToken[] = [];
   const start = state.pos;
-  const readValue = readUntilChar(state, start, ["=", ","]);
+  const readValue = readUntilChar(state, start, "=");
   if (!readValue) return tokens; // if only white space omit token
   const value = state.afterEqual
     ? getValueFromText(readValue.text)

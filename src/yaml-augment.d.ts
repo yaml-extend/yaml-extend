@@ -5,6 +5,9 @@ declare module "yaml" {
   interface Scalar<T = unknown> {
     resolved: boolean;
     resolvedValue: unknown;
+    isKey: boolean;
+    resolvedKeyValue: unknown;
+    tokens: TextToken[];
   }
   interface YAMLMap<K = unknown, V = unknown> {
     resolved: boolean;

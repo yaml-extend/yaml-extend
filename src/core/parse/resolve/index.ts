@@ -39,7 +39,8 @@ export async function resolveUnknown(
   item: unknown,
   anchored: boolean,
   state: ParseState,
-  tempState: TempParseState
+  tempState: TempParseState,
+  isKey?: boolean
 ): Promise<unknown> {
   if (item instanceof Alias) return resolveAlias(item, tempState);
   if (item instanceof YAMLSeq)
@@ -47,7 +48,7 @@ export async function resolveUnknown(
   if (item instanceof YAMLMap)
     return await resolveMap(item, anchored, state, tempState);
   if (item instanceof Scalar)
-    return await resolveScalar(item, anchored, state, tempState);
+    return await resolveScalar(item, anchored, state, tempState, isKey);
 
   return item;
 }
@@ -88,7 +89,8 @@ async function resolveScalar(
   scalar: Scalar,
   anchored: boolean,
   state: ParseState,
-  tempState: TempParseState
+  tempState: TempParseState,
+  isKey?: boolean
 ): Promise<unknown> {
   // update range
   if (!anchored)
@@ -150,8 +152,12 @@ async function resolveMap(
   // handle value
   let res: Record<string, unknown> = {};
   for (const pair of map.items) {
-    let hKey = await resolveUnknown(pair.key, anchored, state, tempState);
+    let hKey = await resolveUnknown(pair.key, anchored, state, tempState, true);
     let hVal = await resolveUnknown(pair.value, anchored, state, tempState);
+    if (pair.key instanceof Scalar) {
+      pair.key.resolvedKeyValue = hVal;
+      pair.key.isKey = true;
+    }
     res[stringify(hKey, true)] = hVal;
   }
   let out: unknown = res; // just to avoid ts errors

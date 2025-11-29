@@ -16,7 +16,7 @@ export function handleParam(
   tempState: TempParseState
 ): unknown {
   // destrcture parts
-  const alias = ctx.paths[1].path;
+  const alias = ctx.paths[0].path;
 
   // get needed cache data
   const cache = state.cache.get(tempState.resolvedPath);

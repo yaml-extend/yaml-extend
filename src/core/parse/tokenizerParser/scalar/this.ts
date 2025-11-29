@@ -26,7 +26,7 @@ export async function handleThis(
   tempState.locals.push(args);
 
   try {
-    const node = await traverseNodes(cache.AST, paths, state, tempState, 1);
+    const node = await traverseNodes(cache.AST, paths, state, tempState);
 
     if (ctx.type) {
       const verified = verifyNodeType(node, ctx.type.type);

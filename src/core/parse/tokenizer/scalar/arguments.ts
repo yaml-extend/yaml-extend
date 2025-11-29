@@ -39,7 +39,7 @@ export function tokenizeArgs(
   for (const t of tokens)
     if (t.type === ArgsTokenType.KEY_VALUE)
       t.keyValueToks = tokenizeKeyValue(
-        t.raw ? t.raw.trim() : "",
+        t.raw ?? "",
         t,
         tempState,
         depth,
@@ -68,7 +68,7 @@ function nextArgsToken(
 
   // define vars
   let start: number;
-  let readValue: { raw: string; text: string } | undefined;
+  let readValue: { raw: string; text: string; present: boolean };
   let value: string;
   let pos: Pos;
   let linePos: [LinePos, LinePos] | undefined;
@@ -95,35 +95,12 @@ function nextArgsToken(
   if (ch === ",") {
     start = state.pos;
     readValue = read(state, start, 1);
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
-      commaToken = {
-        type: ArgsTokenType.COMMA,
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-      };
-      tokens.push(commaToken);
-    }
-    return tokens;
-  }
-
-  // handle KeyValue pair token
-  start = state.pos;
-  readValue = readUntilChar(state, start, ",");
-  if (readValue) {
     value = readValue.text;
     pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
     linePos = getLinePosFromRange(tempState.lineStarts, pos);
-    keyValueToken = {
-      type: ArgsTokenType.KEY_VALUE,
+    commaToken = {
+      type: ArgsTokenType.COMMA,
       raw: readValue.raw,
       text: readValue.text,
       value,
@@ -131,8 +108,28 @@ function nextArgsToken(
       linePos,
       pos,
     };
-    tokens.push(keyValueToken);
+    tokens.push(commaToken);
+
+    return tokens;
   }
+
+  // handle KeyValue pair token
+  start = state.pos;
+  readValue = readUntilChar(state, start, ",");
+  value = readValue.text;
+  pos = [start, state.pos];
+  mergeTokenPosition(pos, parentTok);
+  linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  keyValueToken = {
+    type: ArgsTokenType.KEY_VALUE,
+    raw: readValue.raw,
+    text: readValue.text,
+    value,
+    quoted: false,
+    linePos,
+    pos,
+  };
+  tokens.push(keyValueToken);
 
   return tokens;
 }

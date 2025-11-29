@@ -23,7 +23,7 @@ export async function handleImport(
   // get needed cache data
   const cache = state.cache.get(tempState.resolvedPath);
   if (!cache) return;
-  const imp = getImport(cache.directives.import, paths[1].path, true);
+  const imp = getImport(cache.directives.import, paths[0].path, true);
   if (!imp) return;
 
   // merge default with defined params
@@ -32,7 +32,7 @@ export async function handleImport(
   // import file
   const parse = await importModule(imp.path, finalParams, state, tempState);
   // traverse load using nodepath and verify node type if passed
-  const node = await traverseNodes(parse, paths, state, tempState, 2);
+  const node = await traverseNodes(parse, paths, state, tempState, 1);
   if (ctx.type) {
     const verified = verifyNodeType(node, ctx.type.type);
     if (!verified) {

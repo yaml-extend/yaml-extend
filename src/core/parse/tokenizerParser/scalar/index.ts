@@ -24,13 +24,10 @@ import { Scalar } from "yaml";
 
 export type Context = {
   textToken: TextToken;
+  base: { value: string; tok: ExprToken } | undefined;
   paths: { path: string; tok: ExprToken }[];
   args: { argsObj: Record<string, unknown>; tok: ExprToken } | undefined;
   type: { type: "as scalar" | "as map" | "as seq"; tok: ExprToken } | undefined;
-  prevTokenType: "path" | "dot" | undefined;
-  argsDefined: boolean;
-  typeDefined: boolean;
-  whiteSpaceDefined: boolean;
 };
 
 /**
@@ -45,15 +42,9 @@ export async function handleScalar(
   state: ParseState,
   tempState: TempParseState
 ): Promise<unknown> {
-  // tokenize scalar
+  // tokenize scalar and tokens to scalar
   const tokens = tokenizeScalar(input, tempState);
-  // add tokens to cache
-  const cache = state.cache.get(tempState.resolvedPath);
-  if (cache) {
-    if (cache.scalarTokens[input])
-      cache.scalarTokens[input].scalars.push(scalar);
-    else cache.scalarTokens[input] = { scalars: [scalar], tokens };
-  }
+  scalar.tokens = tokens;
   // handle tokens and return them
   return await handleTextTokens(tokens, state, tempState);
 }
@@ -69,19 +60,25 @@ async function handleTextTokens(
   if (!t1) return undefined;
   const freeExpr = t1.freeExpr;
   // if free expression handle expression tokens directly
-  if (freeExpr)
-    return await handleExprTokens(
+  if (freeExpr) {
+    const value = await handleExprTokens(
       tokens[0],
       tokens[0].exprTokens,
       state,
       tempState
     );
+    t1.resolvedValue = value;
+    return value;
+  }
   // handle interpolated text
   let out: string = "";
   let i = 0;
   while (i < tokens.length) {
     const tok = tokens[i];
-    if (tok.type === TextTokenType.TEXT) out += tok.text;
+    if (tok.type === TextTokenType.TEXT) {
+      out += tok.text;
+      tok.resolvedValue = tok.text;
+    }
     if (tok.type === TextTokenType.EXPR) {
       const value = await handleExprTokens(
         tok,
@@ -92,6 +89,7 @@ async function handleTextTokens(
       const textValue =
         typeof value === "string" ? value : JSON.stringify(value);
       out += textValue;
+      tok.resolvedValue = textValue;
     }
     i++;
   }
@@ -107,104 +105,60 @@ async function handleExprTokens(
   if (!tokens) return undefined;
   // expression state and error definition
   const ctx: Context = {
+    base: undefined,
     textToken,
     paths: [],
     args: undefined,
     type: undefined,
-    prevTokenType: undefined,
-    argsDefined: false,
-    typeDefined: false,
-    whiteSpaceDefined: false,
   };
+  let prevTokenType: "dot" | "path" | undefined = undefined;
   // loop tokens
   for (const tok of tokens) {
-    // if path token handle it
-    if (tok.type === ExprTokenType.PATH) {
-      // make sure that no two path tokens are repeated
-      if (ctx.prevTokenType === "path")
-        tempState.errors.push(
-          new YAMLExprError(
-            tok.pos,
-            "",
-            "Path tokens should be separated by dots."
-          )
-        );
-      ctx.prevTokenType = "path";
-      // push path text
-      ctx.paths.push({ path: tok.text as string, tok });
-    }
+    switch (tok.type) {
+      case ExprTokenType.BASE:
+        ctx.base = { value: tok.text, tok };
+        break;
 
-    // if dot token handle it
-    if (tok.type === ExprTokenType.DOT) {
-      // make sure that no two dot tokens are repeated
-      if (ctx.prevTokenType === "dot")
-        tempState.errors.push(
-          new YAMLExprError(
-            tok.pos,
-            "",
-            "Path should be present after each dot."
-          )
-        );
-      ctx.prevTokenType = "dot";
-    }
+      case ExprTokenType.PATH:
+        if (prevTokenType === "path")
+          tempState.errors.push(
+            new YAMLExprError(
+              tok.pos,
+              "",
+              "Path tokens should be separated by dots."
+            )
+          );
+        prevTokenType = "path";
+        ctx.paths.push({ path: tok.text as string, tok });
+        break;
 
-    // if args token handle it
-    if (tok.type === ExprTokenType.ARGS) {
-      // make sure that args token is defined only once
-      if (ctx.argsDefined) {
-        tempState.errors.push(
-          new YAMLExprError(
-            tok.pos,
-            "",
-            "Each expression can only contain one arguments parenthesis."
-          )
-        );
-        continue;
-      }
-      ctx.argsDefined = true;
-      // handle args
-      const args = await handleArgTokens(tok.argsTokens, state, tempState);
-      ctx.args ??= { argsObj: {}, tok };
-      for (const [k, v] of Object.entries(args)) ctx.args.argsObj[k] = v;
-    }
+      case ExprTokenType.DOT:
+        // make sure that no two dot tokens are repeated
+        if (prevTokenType === "dot")
+          tempState.errors.push(
+            new YAMLExprError(
+              tok.pos,
+              "",
+              "Path should be present after each dot."
+            )
+          );
+        prevTokenType = "dot";
+        break;
 
-    // if type token handle it
-    if (tok.type === ExprTokenType.TYPE) {
-      // make sure that type token is defined only once
-      if (ctx.typeDefined) {
-        tempState.errors.push(
-          new YAMLExprError(
-            tok.pos,
-            "",
-            "Each expression can only contain one type definition."
-          )
-        );
-        continue;
-      }
-      ctx.typeDefined = true;
-      // set type
-      ctx.type = { type: tok.text.trim() as "as scalar", tok };
-    }
+      case ExprTokenType.ARGS:
+        const args = await handleArgTokens(tok.argsTokens, state, tempState);
+        ctx.args ??= { argsObj: {}, tok };
+        for (const [k, v] of Object.entries(args)) ctx.args.argsObj[k] = v;
+        break;
 
-    // if white space token handle it
-    if (tok.type === ExprTokenType.WHITE_SPACE) {
-      // make sure that white space token is defined only once
-      if (ctx.whiteSpaceDefined) {
-        tempState.errors.push(
-          new YAMLExprError(
-            tok.pos,
-            "",
-            `Each expression can only contain one white space before type definition, if it's a part of a path wrap it inside "" or ''.`
-          )
-        );
-        continue;
-      }
+      case ExprTokenType.TYPE:
+        ctx.type = { type: tok.text.trim() as "as scalar", tok };
+        break;
     }
   }
 
   // get base (first path) and verify it
-  const baseTok = ctx.paths[0];
-  if (!baseTok) {
+  if (!ctx.base) {
     tempState.errors.push(
       new YAMLExprError(
         ctx.textToken.pos,
@@ -214,10 +168,10 @@ async function handleExprTokens(
     );
     return undefined;
   }
-  if (!verifyBase(baseTok.path)) {
+  if (!verifyBase(ctx.base.value)) {
     tempState.errors.push(
       new YAMLExprError(
-        baseTok.tok.pos,
+        ctx.base.tok.pos,
         "",
         "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."
       )
@@ -226,18 +180,20 @@ async function handleExprTokens(
   }
 
   // get alias (second path) and verify it
-  const aliasTok = ctx.paths[1];
+  const aliasTok = ctx.paths[0];
   if (!aliasTok) {
     tempState.errors.push(
       new YAMLExprError(
-        baseTok.tok.pos,
+        ctx.base.tok.pos,
         "",
         "You have to pass an alias after expression base."
       )
     );
     return undefined;
   }
-  if (!verifyAlias(aliasTok.path, baseTok.path as "import", state, tempState)) {
+  if (
+    !verifyAlias(aliasTok.path, ctx.base.value as "import", state, tempState)
+  ) {
     tempState.errors.push(
       new YAMLExprError(
         aliasTok.tok.pos,
@@ -249,7 +205,7 @@ async function handleExprTokens(
   }
 
   // verify arguments if passed
-  if (ctx.args && baseTok.path !== "this" && baseTok.path !== "import") {
+  if (ctx.args && ctx.base.value !== "this" && ctx.base.value !== "import") {
     tempState.errors.push(
       new YAMLExprError(
         ctx.args.tok.pos,
@@ -261,7 +217,7 @@ async function handleExprTokens(
 
   // verify type if passed
   if (ctx.type) {
-    if (baseTok.path !== "this" && baseTok.path !== "import")
+    if (ctx.base.value !== "this" && ctx.base.value !== "import")
       tempState.errors.push(
         new YAMLExprError(
           ctx.type.tok.pos,
@@ -282,7 +238,7 @@ async function handleExprTokens(
   }
 
   // resolve
-  switch (baseTok.path) {
+  switch (ctx.base.value) {
     case "this":
       return handleThis(ctx, state, tempState);
     case "import":
@@ -381,7 +337,7 @@ async function handleArgTokens(
             "Key value pairs should be separeted by comma."
           )
         );
-      prevTokenType === "keyValue";
+      prevTokenType = "keyValue";
       // resolve key value token
       const { key, value } = await handleKeyValueTokens(
         tok.keyValueToks,

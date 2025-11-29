@@ -1,11 +1,4 @@
 %PARAM kk kkboy
 %PRIVATE k
 ---
-data:
-  node1: gg
-  node2:
-    - { name: ziad }
-    - ziad
-  node with sapce: value
-
-k: $param.kk(df = fef) as key
+k: ${ param.kk( df = fef, m=ff, m = fg,f=g, f =f ) as key}

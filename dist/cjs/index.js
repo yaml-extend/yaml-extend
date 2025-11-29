@@ -1175,7 +1175,6 @@ async function initModuleCache(state, tempState) {
         directives,
         resolvedPath: tempState.resolvedPath,
         sourceHash,
-        scalarTokens: {},
         AST,
     };
     // save new cache in the state
@@ -1309,7 +1308,7 @@ function mergeScalarPosition(pos, tempState) {
 function readUntilClose(state, start, openChar, closeChar, ignoreTextTrim) {
     var _a;
     if (eof(state))
-        return;
+        return { raw: "", text: "", present: false };
     let out = "";
     let depth = 0;
     const checkOpen = openChar.length > 1
@@ -1349,28 +1348,26 @@ function readUntilClose(state, start, openChar, closeChar, ignoreTextTrim) {
     }
     const raw = state.input.slice(start, state.pos);
     const text = ignoreTextTrim ? out : out.trim();
-    return { raw, text };
+    return { raw, text, present: true };
 }
 function read(state, start, steps, ignoreTextTrim) {
     if (eof(state))
-        return;
+        return { raw: "", text: "", present: false };
     state.pos = advance(state, steps);
     const raw = state.input.slice(start, state.pos);
     const text = ignoreTextTrim ? raw : raw.trim();
-    return { raw, text };
+    return { raw, text, present: true };
 }
 function readUntilChar(state, start, stopChar, ignoreTextTrim) {
     var _a;
     if (eof(state))
-        return;
+        return { raw: "", text: "", present: false };
     let out = "";
     const checkStop = stopChar instanceof RegExp
         ? (ch) => stopChar.test(ch)
-        : Array.isArray(stopChar)
-            ? (ch) => stopChar.includes(ch)
-            : stopChar.length > 1
-                ? () => peek(state, stopChar.length) === stopChar
-                : (ch) => ch === stopChar;
+        : stopChar.length > 1
+            ? () => peek(state, stopChar.length) === stopChar
+            : (ch) => ch === stopChar;
     while (!eof(state)) {
         const ch = current(state);
         if (ch === "\\") {
@@ -1397,12 +1394,12 @@ function readUntilChar(state, start, stopChar, ignoreTextTrim) {
     }
     const raw = state.input.slice(start, state.pos);
     const text = ignoreTextTrim ? out : out.trim();
-    return { raw, text };
+    return { raw, text, present: true };
 }
 function readUntilCharInclusive(state, start, stopChar, ignoreTextTrim) {
     var _a;
     if (eof(state))
-        return;
+        return { raw: "", text: "", present: false };
     let out = "";
     const checkStop = stopChar instanceof RegExp
         ? (ch) => stopChar.test(ch)
@@ -1442,7 +1439,7 @@ function readUntilCharInclusive(state, start, stopChar, ignoreTextTrim) {
     }
     const raw = state.input.slice(start, state.pos);
     const text = out.trim();
-    return { raw, text };
+    return { raw, text, present: true };
 }
 
 /**
@@ -1459,6 +1456,7 @@ exports.TextTokenType = void 0;
  */
 exports.ExprTokenType = void 0;
 (function (ExprTokenType) {
+    ExprTokenType["BASE"] = "BASE";
     ExprTokenType["PATH"] = "PATH";
     ExprTokenType["DOT"] = "DOT";
     ExprTokenType["ARGS"] = "ARGS";
@@ -1488,7 +1486,7 @@ exports.KeyValueTokenType = void 0;
 
 // main function
 function tokenizeKeyValue(input, argsTok, tempState, depth, tokenizeTextFunc) {
-    var _a;
+    var _a, _b;
     // handle tokens
     let tokens = [];
     let state = initArgsTokenState$1(input);
@@ -1501,7 +1499,7 @@ function tokenizeKeyValue(input, argsTok, tempState, depth, tokenizeTextFunc) {
     // resolve any value tokens using text tokenizer
     for (const t of tokens)
         if (t.type === exports.KeyValueTokenType.VALUE)
-            t.valueToks = tokenizeTextFunc(t.raw ? t.raw.trim() : "", t, tempState, depth);
+            t.valueToks = tokenizeTextFunc((_b = t.raw) !== null && _b !== void 0 ? _b : "", t, tempState, depth);
     // return
     return tokens;
 }
@@ -1591,7 +1589,7 @@ function readQuoted(state, tempState, parentTok) {
 function readUnQuoted(state, tempState, parentTok) {
     let tokens = [];
     const start = state.pos;
-    const readValue = readUntilChar(state, start, ["=", ","]);
+    const readValue = readUntilChar(state, start, "=");
     if (!readValue)
         return tokens; // if only white space omit token
     const value = state.afterEqual
@@ -1625,6 +1623,7 @@ function initArgsTokenState$1(input) {
 
 // main function
 function tokenizeArgs(input, exprTok, tempState, depth, tokenizeTextFunc) {
+    var _a;
     // handle tokens
     let tokens = [];
     let state = initArgsTokenState(input);
@@ -1637,7 +1636,7 @@ function tokenizeArgs(input, exprTok, tempState, depth, tokenizeTextFunc) {
     // resolve any value tokens using text tokenizer
     for (const t of tokens)
         if (t.type === exports.ArgsTokenType.KEY_VALUE)
-            t.keyValueToks = tokenizeKeyValue(t.raw ? t.raw.trim() : "", t, tempState, depth, tokenizeTextFunc);
+            t.keyValueToks = tokenizeKeyValue((_a = t.raw) !== null && _a !== void 0 ? _a : "", t, tempState, depth, tokenizeTextFunc);
     // return
     return tokens;
 }
@@ -1677,34 +1676,12 @@ function nextArgsToken(state, tempState, parentTok) {
     if (ch === ",") {
         start = state.pos;
         readValue = read(state, start, 1);
-        if (readValue) {
-            value = readValue.text;
-            pos = [start, state.pos];
-            mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
-            commaToken = {
-                type: exports.ArgsTokenType.COMMA,
-                raw: readValue.raw,
-                text: readValue.text,
-                value,
-                quoted: false,
-                linePos,
-                pos,
-            };
-            tokens.push(commaToken);
-        }
-        return tokens;
-    }
-    // handle KeyValue pair token
-    start = state.pos;
-    readValue = readUntilChar(state, start, ",");
-    if (readValue) {
         value = readValue.text;
         pos = [start, state.pos];
         mergeTokenPosition(pos, parentTok);
         linePos = getLinePosFromRange(tempState.lineStarts, pos);
-        keyValueToken = {
-            type: exports.ArgsTokenType.KEY_VALUE,
+        commaToken = {
+            type: exports.ArgsTokenType.COMMA,
             raw: readValue.raw,
             text: readValue.text,
             value,
@@ -1712,8 +1689,26 @@ function nextArgsToken(state, tempState, parentTok) {
             linePos,
             pos,
         };
-        tokens.push(keyValueToken);
+        tokens.push(commaToken);
+        return tokens;
     }
+    // handle KeyValue pair token
+    start = state.pos;
+    readValue = readUntilChar(state, start, ",");
+    value = readValue.text;
+    pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    keyValueToken = {
+        type: exports.ArgsTokenType.KEY_VALUE,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+    };
+    tokens.push(keyValueToken);
     return tokens;
 }
 function initArgsTokenState(input) {
@@ -1728,9 +1723,12 @@ function initArgsTokenState(input) {
 
 // main function
 function tokenizeExpr(input, textTok, tempState, depth, tokenizeTextFunc) {
+    var _a;
     // handle tokens
     let tokens = [];
     let state = initExprTokenState(input);
+    while (!eof(state) && /\s/.test(current(state)))
+        state.pos = advance(state); // skip white space at the start
     while (true) {
         const toks = nextExprToken(state, tempState, textTok);
         tokens.push(...toks);
@@ -1740,7 +1738,7 @@ function tokenizeExpr(input, textTok, tempState, depth, tokenizeTextFunc) {
     // tokenize args inside ARGS token
     for (const t of tokens)
         if (t.type === exports.ExprTokenType.ARGS)
-            t.argsTokens = tokenizeArgs(t.raw ? t.raw.trim() : "", t, tempState, depth, tokenizeTextFunc);
+            t.argsTokens = tokenizeArgs((_a = t.raw) !== null && _a !== void 0 ? _a : "", t, tempState, depth, tokenizeTextFunc);
     // return
     return tokens;
 }
@@ -1930,14 +1928,13 @@ function readQuotedPath(state, tempState, parentTok) {
     mergeTokenPosition(pos, parentTok);
     const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
-        type: exports.ExprTokenType.PATH,
+        type: state.baseDefined ? exports.ExprTokenType.PATH : exports.ExprTokenType.BASE,
         raw: readValue.raw,
         text: readValue.text,
         value,
         quoted: true,
         linePos,
         pos,
-        isBase: state.baseDefined ? false : true,
     };
     tokens.push(tok);
     state.baseDefined = true; // set baseDefined to true so only first path is defined as base
@@ -1980,14 +1977,13 @@ function readPath(state, tempState, parentTok) {
     mergeTokenPosition(pos, parentTok);
     const linePos = getLinePosFromRange(tempState.lineStarts, pos);
     const tok = {
-        type: exports.ExprTokenType.PATH,
+        type: state.baseDefined ? exports.ExprTokenType.PATH : exports.ExprTokenType.BASE,
         raw,
         text,
         value,
         quoted: false,
         linePos,
         pos,
-        isBase: state.baseDefined ? false : true,
     };
     tokens.push(tok);
     state.baseDefined = true; // set baseDefined to true so only first path is defined as base
@@ -2008,9 +2004,12 @@ function initExprTokenState(input) {
 
 // main function
 function tokenizeText(input, keyValueTok, tempState, depth = 0) {
+    var _a;
     // handle tokens
     let state = initTextTokenizerState(input);
     let tokens = [];
+    while (!eof(state) && /\s/.test(current(state)))
+        state.pos = advance(state); // skip white space at the start
     while (true) {
         const toks = nextTextToken(state, tempState, keyValueTok, depth);
         tokens.push(...toks);
@@ -2022,7 +2021,7 @@ function tokenizeText(input, keyValueTok, tempState, depth = 0) {
     // tokenize expression inside EXPR tokens
     for (const t of tokens)
         if (t.type === exports.TextTokenType.EXPR)
-            t.exprTokens = tokenizeExpr(t.raw ? t.raw.trim() : "", t, tempState, depth, tokenizeText);
+            t.exprTokens = tokenizeExpr((_a = t.raw) !== null && _a !== void 0 ? _a : "", t, tempState, depth, tokenizeText);
     // return
     return tokens;
 }
@@ -2072,50 +2071,46 @@ function nextTextToken(state, tempState, parentTok, depth) {
         // make open mark token
         start = state.pos;
         readValue = read(state, start, 2);
-        if (readValue) {
-            value = readValue.text;
-            pos = [start, state.pos];
-            if (depth === 0)
-                mergeScalarPosition(pos, tempState);
-            if (parentTok)
-                mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
-            omToken = {
-                raw: readValue.raw,
-                text: readValue.text,
-                value,
-                quoted: false,
-                linePos,
-                pos,
-            };
-        }
+        value = readValue.text;
+        pos = [start, state.pos];
+        if (depth === 0)
+            mergeScalarPosition(pos, tempState);
+        if (parentTok)
+            mergeTokenPosition(pos, parentTok);
+        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        omToken = {
+            raw: readValue.raw,
+            text: readValue.text,
+            value,
+            quoted: false,
+            linePos,
+            pos,
+        };
         // read expression until "}" mark
         start = state.pos;
         readValue = readUntilClose(state, start, "${", "}");
-        if (readValue) {
-            value = readValue.text;
-            pos = [start, state.pos];
-            if (depth === 0)
-                mergeScalarPosition(pos, tempState);
-            if (parentTok)
-                mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
-            exprToken = {
-                type: exports.TextTokenType.EXPR,
-                raw: readValue.raw,
-                text: readValue.text,
-                value,
-                quoted: false,
-                linePos,
-                pos,
-                freeExpr: false,
-                depth,
-            };
-        }
+        value = readValue.text;
+        pos = [start, state.pos];
+        if (depth === 0)
+            mergeScalarPosition(pos, tempState);
+        if (parentTok)
+            mergeTokenPosition(pos, parentTok);
+        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        exprToken = {
+            type: exports.TextTokenType.EXPR,
+            raw: readValue.raw,
+            text: readValue.text,
+            value,
+            quoted: false,
+            linePos,
+            pos,
+            freeExpr: false,
+            depth,
+        };
         // make close mark token
         start = state.pos;
         readValue = read(state, start, 1);
-        if (readValue) {
+        if (readValue.present) {
             value = readValue.text;
             pos = [start, state.pos];
             if (depth === 0)
@@ -2133,11 +2128,9 @@ function nextTextToken(state, tempState, parentTok, depth) {
             };
         }
         // if main token (expression token) is present push it
-        if (exprToken) {
-            exprToken.exprMarkOpen = omToken;
-            exprToken.exprMarkClose = cmToken;
-            tokens.push(exprToken);
-        }
+        exprToken.exprMarkOpen = omToken;
+        exprToken.exprMarkClose = cmToken;
+        tokens.push(exprToken);
         return tokens;
     }
     // handle string starting with non escaped "$" sign
@@ -2145,57 +2138,6 @@ function nextTextToken(state, tempState, parentTok, depth) {
         // make "$" mark token
         start = state.pos;
         readValue = read(state, start, 1);
-        if (readValue) {
-            value = readValue.text;
-            pos = [start, state.pos];
-            if (depth === 0)
-                mergeScalarPosition(pos, tempState);
-            if (parentTok)
-                mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
-            omToken = {
-                raw: readValue.raw,
-                text: readValue.text,
-                value,
-                quoted: false,
-                linePos,
-                pos,
-            };
-        }
-        // handle expr token (read until end of the input)
-        start = state.pos;
-        readValue = read(state, start, Infinity);
-        if (readValue) {
-            value = readValue.text;
-            pos = [start, state.pos];
-            if (depth === 0)
-                mergeScalarPosition(pos, tempState);
-            if (parentTok)
-                mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
-            exprToken = {
-                type: exports.TextTokenType.EXPR,
-                raw: readValue.raw,
-                text: readValue.text,
-                value,
-                quoted: false,
-                linePos,
-                pos,
-                freeExpr: true,
-                depth,
-            };
-        }
-        // if main token (expression token) is present push it
-        if (exprToken) {
-            exprToken.exprMarkOpen = omToken;
-            tokens.push(exprToken);
-        }
-        return tokens;
-    }
-    // read until first interpolation mark "${"
-    start = state.pos;
-    readValue = readUntilChar(state, start, "${", true);
-    if (readValue) {
         value = readValue.text;
         pos = [start, state.pos];
         if (depth === 0)
@@ -2203,20 +2145,62 @@ function nextTextToken(state, tempState, parentTok, depth) {
         if (parentTok)
             mergeTokenPosition(pos, parentTok);
         linePos = getLinePosFromRange(tempState.lineStarts, pos);
-        textToken = {
-            type: exports.TextTokenType.TEXT,
+        omToken = {
             raw: readValue.raw,
             text: readValue.text,
             value,
             quoted: false,
             linePos,
             pos,
-            freeExpr: false,
+        };
+        // handle expr token (read until end of the input)
+        start = state.pos;
+        readValue = read(state, start, Infinity);
+        value = readValue.text;
+        pos = [start, state.pos];
+        if (depth === 0)
+            mergeScalarPosition(pos, tempState);
+        if (parentTok)
+            mergeTokenPosition(pos, parentTok);
+        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        exprToken = {
+            type: exports.TextTokenType.EXPR,
+            raw: readValue.raw,
+            text: readValue.text,
+            value,
+            quoted: false,
+            linePos,
+            pos,
+            freeExpr: true,
             depth,
         };
+        // if main token (expression token) is present push it
+        exprToken.exprMarkOpen = omToken;
+        tokens.push(exprToken);
+        return tokens;
     }
-    if (textToken)
-        tokens.push(textToken);
+    // read until first interpolation mark "${"
+    start = state.pos;
+    readValue = readUntilChar(state, start, "${", true);
+    value = readValue.text;
+    pos = [start, state.pos];
+    if (depth === 0)
+        mergeScalarPosition(pos, tempState);
+    if (parentTok)
+        mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    textToken = {
+        type: exports.TextTokenType.TEXT,
+        raw: readValue.raw,
+        text: readValue.text,
+        value,
+        quoted: false,
+        linePos,
+        pos,
+        freeExpr: false,
+        depth,
+    };
+    tokens.push(textToken);
     return tokens;
 }
 // helper to init state
@@ -2387,7 +2371,7 @@ async function handleThis(ctx, state, tempState) {
     // update local values
     tempState.locals.push(args);
     try {
-        const node = await traverseNodes(cache.AST, paths, state, tempState, 1);
+        const node = await traverseNodes(cache.AST, paths, state, tempState);
         if (ctx.type) {
             const verified = verifyNodeType(node, ctx.type.type);
             if (!verified) {
@@ -2417,7 +2401,7 @@ async function handleImport(ctx, state, tempState) {
     const cache = state.cache.get(tempState.resolvedPath);
     if (!cache)
         return;
-    const imp = getImport(cache.directives.import, paths[1].path, true);
+    const imp = getImport(cache.directives.import, paths[0].path, true);
     if (!imp)
         return;
     // merge default with defined params
@@ -2425,7 +2409,7 @@ async function handleImport(ctx, state, tempState) {
     // import file
     const parse = await importModule(imp.path, finalParams, state, tempState);
     // traverse load using nodepath and verify node type if passed
-    const node = await traverseNodes(parse, paths, state, tempState, 2);
+    const node = await traverseNodes(parse, paths, state, tempState, 1);
     if (ctx.type) {
         const verified = verifyNodeType(node, ctx.type.type);
         if (!verified) {
@@ -2466,7 +2450,7 @@ async function importModule(targetPath, targetParams, state, tempState) {
 function handleParam(ctx, state, tempState) {
     var _a, _b, _c, _d, _e;
     // destrcture parts
-    const alias = ctx.paths[1].path;
+    const alias = ctx.paths[0].path;
     // get needed cache data
     const cache = state.cache.get(tempState.resolvedPath);
     if (!cache)
@@ -2495,7 +2479,7 @@ function handleParam(ctx, state, tempState) {
 function handleLocal(ctx, state, tempState) {
     var _a, _b;
     // destrcture parts
-    const alias = ctx.paths[1].path;
+    const alias = ctx.paths[0].path;
     // get needed cache data
     const cache = state.cache.get(tempState.resolvedPath);
     if (!cache)
@@ -2528,16 +2512,9 @@ function handleLocal(ctx, state, tempState) {
  * @returns Value returned from expression resolve.
  */
 async function handleScalar(input, scalar, state, tempState) {
-    // tokenize scalar
+    // tokenize scalar and tokens to scalar
     const tokens = tokenizeScalar(input, tempState);
-    // add tokens to cache
-    const cache = state.cache.get(tempState.resolvedPath);
-    if (cache) {
-        if (cache.scalarTokens[input])
-            cache.scalarTokens[input].scalars.push(scalar);
-        else
-            cache.scalarTokens[input] = { scalars: [scalar], tokens };
-    }
+    scalar.tokens = tokens;
     // handle tokens and return them
     return await handleTextTokens(tokens, state, tempState);
 }
@@ -2550,19 +2527,25 @@ async function handleTextTokens(tokens, state, tempState) {
         return undefined;
     const freeExpr = t1.freeExpr;
     // if free expression handle expression tokens directly
-    if (freeExpr)
-        return await handleExprTokens(tokens[0], tokens[0].exprTokens, state, tempState);
+    if (freeExpr) {
+        const value = await handleExprTokens(tokens[0], tokens[0].exprTokens, state, tempState);
+        t1.resolvedValue = value;
+        return value;
+    }
     // handle interpolated text
     let out = "";
     let i = 0;
     while (i < tokens.length) {
         const tok = tokens[i];
-        if (tok.type === exports.TextTokenType.TEXT)
+        if (tok.type === exports.TextTokenType.TEXT) {
             out += tok.text;
+            tok.resolvedValue = tok.text;
+        }
         if (tok.type === exports.TextTokenType.EXPR) {
             const value = await handleExprTokens(tok, tok.exprTokens, state, tempState);
             const textValue = typeof value === "string" ? value : JSON.stringify(value);
             out += textValue;
+            tok.resolvedValue = textValue;
         }
         i++;
     }
@@ -2574,88 +2557,68 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
         return undefined;
     // expression state and error definition
     const ctx = {
+        base: undefined,
         textToken,
         paths: [],
         args: undefined,
         type: undefined,
-        prevTokenType: undefined,
-        argsDefined: false,
-        typeDefined: false,
-        whiteSpaceDefined: false,
     };
+    let prevTokenType = undefined;
     // loop tokens
     for (const tok of tokens) {
-        // if path token handle it
-        if (tok.type === exports.ExprTokenType.PATH) {
-            // make sure that no two path tokens are repeated
-            if (ctx.prevTokenType === "path")
-                tempState.errors.push(new YAMLExprError(tok.pos, "", "Path tokens should be separated by dots."));
-            ctx.prevTokenType = "path";
-            // push path text
-            ctx.paths.push({ path: tok.text, tok });
+        switch (tok.type) {
+            case exports.ExprTokenType.BASE:
+                ctx.base = { value: tok.text, tok };
+                break;
+            case exports.ExprTokenType.PATH:
+                if (prevTokenType === "path")
+                    tempState.errors.push(new YAMLExprError(tok.pos, "", "Path tokens should be separated by dots."));
+                prevTokenType = "path";
+                ctx.paths.push({ path: tok.text, tok });
+                break;
+            case exports.ExprTokenType.DOT:
+                // make sure that no two dot tokens are repeated
+                if (prevTokenType === "dot")
+                    tempState.errors.push(new YAMLExprError(tok.pos, "", "Path should be present after each dot."));
+                prevTokenType = "dot";
+                break;
+            case exports.ExprTokenType.ARGS:
+                const args = await handleArgTokens(tok.argsTokens, state, tempState);
+                (_a = ctx.args) !== null && _a !== void 0 ? _a : (ctx.args = { argsObj: {}, tok });
+                for (const [k, v] of Object.entries(args))
+                    ctx.args.argsObj[k] = v;
+                break;
+            case exports.ExprTokenType.TYPE:
+                ctx.type = { type: tok.text.trim(), tok };
+                break;
         }
-        // if dot token handle it
-        if (tok.type === exports.ExprTokenType.DOT) {
-            // make sure that no two dot tokens are repeated
-            if (ctx.prevTokenType === "dot")
-                tempState.errors.push(new YAMLExprError(tok.pos, "", "Path should be present after each dot."));
-            ctx.prevTokenType = "dot";
-        }
-        // if args token handle it
-        if (tok.type === exports.ExprTokenType.ARGS) {
-            // make sure that args token is defined only once
-            if (ctx.argsDefined) {
-                tempState.errors.push(new YAMLExprError(tok.pos, "", "Each expression can only contain one arguments parenthesis."));
-                continue;
-            }
-            ctx.argsDefined = true;
-            // handle args
-            const args = await handleArgTokens(tok.argsTokens, state, tempState);
-            (_a = ctx.args) !== null && _a !== void 0 ? _a : (ctx.args = { argsObj: {}, tok });
-            for (const [k, v] of Object.entries(args))
-                ctx.args.argsObj[k] = v;
-        }
-        // if type token handle it
-        if (tok.type === exports.ExprTokenType.TYPE) {
-            // make sure that type token is defined only once
-            if (ctx.typeDefined) {
-                tempState.errors.push(new YAMLExprError(tok.pos, "", "Each expression can only contain one type definition."));
-                continue;
-            }
-            ctx.typeDefined = true;
-            // set type
-            ctx.type = { type: tok.text.trim(), tok };
-        }
-        // if white space token handle it
-        if (tok.type === exports.ExprTokenType.WHITE_SPACE) ;
     }
     // get base (first path) and verify it
-    const baseTok = ctx.paths[0];
-    if (!baseTok) {
+    if (!ctx.base) {
         tempState.errors.push(new YAMLExprError(ctx.textToken.pos, "", "Base is missing from this expression."));
         return undefined;
     }
-    if (!verifyBase(baseTok.path)) {
-        tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."));
+    if (!verifyBase(ctx.base.value)) {
+        tempState.errors.push(new YAMLExprError(ctx.base.tok.pos, "", "Invalid base, allowed bases are either: 'this', 'import', 'param' or 'local'."));
         return undefined;
     }
     // get alias (second path) and verify it
-    const aliasTok = ctx.paths[1];
+    const aliasTok = ctx.paths[0];
     if (!aliasTok) {
-        tempState.errors.push(new YAMLExprError(baseTok.tok.pos, "", "You have to pass an alias after expression base."));
+        tempState.errors.push(new YAMLExprError(ctx.base.tok.pos, "", "You have to pass an alias after expression base."));
         return undefined;
     }
-    if (!verifyAlias(aliasTok.path, baseTok.path, state, tempState)) {
+    if (!verifyAlias(aliasTok.path, ctx.base.value, state, tempState)) {
         tempState.errors.push(new YAMLExprError(aliasTok.tok.pos, "", `Alias used: ${aliasTok.path} is not defined in directives.`));
         return undefined;
     }
     // verify arguments if passed
-    if (ctx.args && baseTok.path !== "this" && baseTok.path !== "import") {
+    if (ctx.args && ctx.base.value !== "this" && ctx.base.value !== "import") {
         tempState.errors.push(new YAMLExprError(ctx.args.tok.pos, "", "Arguments will be ignored, they are used with 'this' or 'import' bases only."));
     }
     // verify type if passed
     if (ctx.type) {
-        if (baseTok.path !== "this" && baseTok.path !== "import")
+        if (ctx.base.value !== "this" && ctx.base.value !== "import")
             tempState.errors.push(new YAMLExprError(ctx.type.tok.pos, "", "Type will be ignored, it's used with 'this' or 'import' bases only."));
         if (!verifyType(ctx.type.type)) {
             tempState.errors.push(new YAMLExprError(ctx.type.tok.pos, "", "Invalid type, allowed types are either: 'as scalar', 'as map' or 'as seq'."));
@@ -2663,7 +2626,7 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
         }
     }
     // resolve
-    switch (baseTok.path) {
+    switch (ctx.base.value) {
         case "this":
             return handleThis(ctx, state, tempState);
         case "import":
@@ -2740,6 +2703,7 @@ async function handleArgTokens(tokens, state, tempState) {
             // make sure that no two key value tokens are repeated (should never happen)
             if (prevTokenType === "keyValue")
                 tempState.errors.push(new YAMLExprError(tok.pos, "", "Key value pairs should be separeted by comma."));
+            prevTokenType = "keyValue";
             // resolve key value token
             const { key, value } = await handleKeyValueTokens(tok.keyValueToks, state, tempState);
             // add key value pair or push error if no key was present
@@ -2807,7 +2771,7 @@ async function resolve(state, tempState, cache) {
  * @param ctx - Context object that holds data about this resolve.
  * @returns Value of the specific resolve function based on type.
  */
-async function resolveUnknown(item, anchored, state, tempState) {
+async function resolveUnknown(item, anchored, state, tempState, isKey) {
     if (item instanceof yaml.Alias)
         return resolveAlias(item, tempState);
     if (item instanceof yaml.YAMLSeq)
@@ -2845,7 +2809,7 @@ function resolveAlias(alias, tempState) {
  * @param id - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value of the resolved string (scalar in YAML).
  */
-async function resolveScalar(scalar, anchored, state, tempState) {
+async function resolveScalar(scalar, anchored, state, tempState, isKey) {
     // update range
     if (!anchored)
         if (scalar.range)
@@ -2897,6 +2861,10 @@ async function resolveMap(map, anchored, state, tempState) {
     for (const pair of map.items) {
         let hKey = await resolveUnknown(pair.key, anchored, state, tempState);
         let hVal = await resolveUnknown(pair.value, anchored, state, tempState);
+        if (pair.key instanceof yaml.Scalar) {
+            pair.key.resolvedKeyValue = hVal;
+            pair.key.isKey = true;
+        }
         res[stringify(hKey, true)] = hVal;
     }
     let out = res; // just to avoid ts errors
@@ -3292,7 +3260,6 @@ function initState(state) {
             cache: new Map(),
             dependency: new DependencyHandler(),
             depth: -1,
-            parsedPaths: [],
         };
     // increment depth and return the state
     s.depth++;

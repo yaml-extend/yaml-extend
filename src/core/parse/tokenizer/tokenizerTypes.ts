@@ -228,6 +228,7 @@ export enum TextTokenType {
  * Token types from expression step of scalar tokenizer
  */
 export enum ExprTokenType {
+  BASE = "BASE",
   PATH = "PATH",
   DOT = "DOT",
   ARGS = "ARGS",
@@ -265,6 +266,7 @@ export type TextToken = RawToken<string> & {
   exprTokens?: ExprToken[];
   exprMarkOpen?: RawToken<string>;
   exprMarkClose?: RawToken<string>;
+  resolvedValue?: unknown;
 };
 
 /**
@@ -275,7 +277,6 @@ export type ExprToken = RawToken<string> & {
   argsTokens?: ArgsToken[];
   argsMarkOpen?: RawToken<string>;
   argsMarkClose?: RawToken<string>;
-  isBase?: boolean;
 };
 
 /**

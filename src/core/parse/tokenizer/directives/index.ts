@@ -15,7 +15,7 @@ import {
   verifyTag,
   verifyVersion,
 } from "./verify.js";
-import { getLinePosFromRange, getValueFromText } from "../../utils/random.js";
+import { getLinePosFromPos, getValueFromText } from "../../utils/random.js";
 import { ParseState, TempParseState } from "../../parseTypes.js";
 import { mergePath } from "../../utils/path.js";
 
@@ -52,7 +52,7 @@ export function tokenizeDirLine(
     }
     const value = getValueFromText(text);
     const pos: Pos = [strIdx + start, strIdx + end];
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     tokens.push({
       raw,
       text,
@@ -285,7 +285,7 @@ function buildInnerRawToken(
   }
   const value = getValueFromText(text);
   const pos: Pos = [absStart, absEnd];
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  const linePos = getLinePosFromPos(tempState.lineStarts, pos);
   return {
     raw,
     text,
@@ -310,7 +310,7 @@ export function parseDirectiveFromTokens(
 
   // calc pos and linePos of the hole directive
   const pos: Pos = [strIdx, strIdx + rawLine.length];
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  const linePos = getLinePosFromPos(tempState.lineStarts, pos);
 
   // handle baseTok
   const rawBaseTok = tokens[0];

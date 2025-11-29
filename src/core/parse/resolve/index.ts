@@ -1,4 +1,4 @@
-import { isRecord, stringify } from "../utils/random.js";
+import { getLinePosFromPos, isRecord, stringify } from "../utils/random.js";
 import { Schema, Scalar, YAMLMap, YAMLSeq, Alias } from "yaml";
 import { YAMLExprError } from "../../extendClasses/error.js";
 import { ModuleCache, ParseState, TempParseState } from "../parseTypes.js";
@@ -57,9 +57,13 @@ export async function resolveUnknown(
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 function resolveAlias(alias: Alias, tempState: TempParseState) {
-  // update range
-  if (alias.range) tempState.range = [alias.range[0], alias.range[1]];
-  else tempState.range = [0, 0];
+  // get postion and linePos of current node
+  alias.pos = alias.range ? [alias.range[0], alias.range[1]] : undefined;
+  alias.linePos =
+    alias.pos && getLinePosFromPos(tempState.lineStarts, alias.pos);
+  // update position of tempstate to the new position
+  if (alias.pos) tempState.pos = alias.pos;
+  else tempState.pos = [0, 0];
   // var to hold out value
   let out: unknown;
   // check if it's saved in aliases
@@ -69,7 +73,7 @@ function resolveAlias(alias: Alias, tempState: TempParseState) {
   else
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         "No anchor is defined yet for this alias."
       )
@@ -90,15 +94,18 @@ async function resolveScalar(
   state: ParseState,
   tempState: TempParseState
 ): Promise<unknown> {
-  // update range
-  if (!anchored)
-    if (scalar.range) tempState.range = [scalar.range[0], scalar.range[1]];
-    else tempState.range = [0, 0];
+  // get postion and linePos of current node
+  scalar.pos = scalar.range ? [scalar.range[0], scalar.range[1]] : undefined;
+  scalar.linePos =
+    scalar.pos && getLinePosFromPos(tempState.lineStarts, scalar.pos);
+  // update position of tempstate to the new position
+  if (scalar.pos) tempState.pos = scalar.pos;
+  else tempState.pos = [0, 0];
   // Detect circular dependency
   if (anchored && !scalar.resolved) {
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         "Tried to access node before being defined."
       )
@@ -132,15 +139,17 @@ async function resolveMap(
   state: ParseState,
   tempState: TempParseState
 ): Promise<unknown> {
-  // update range
-  if (!anchored)
-    if (map.range) tempState.range = [map.range[0], map.range[1]];
-    else tempState.range = [0, 0];
+  // get postion and linePos of current node
+  map.pos = map.range ? [map.range[0], map.range[1]] : undefined;
+  map.linePos = map.pos && getLinePosFromPos(tempState.lineStarts, map.pos);
+  // update position of tempstate to the new position
+  if (map.pos) tempState.pos = map.pos;
+  else tempState.pos = [0, 0];
   // var to hold out value
   if (anchored && !map.resolved) {
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         "Tried to access node before being defined."
       )
@@ -172,15 +181,17 @@ async function resolveSeq(
   state: ParseState,
   tempState: TempParseState
 ) {
-  // update range
-  if (!anchored)
-    if (seq.range) tempState.range = [seq.range[0], seq.range[1]];
-    else tempState.range = [0, 0];
+  // get postion and linePos of current node
+  seq.pos = seq.range ? [seq.range[0], seq.range[1]] : undefined;
+  seq.linePos = seq.pos && getLinePosFromPos(tempState.lineStarts, seq.pos);
+  // update position of tempstate to the new position
+  if (seq.pos) tempState.pos = seq.pos;
+  else tempState.pos = [0, 0];
   // check resolve status
   if (anchored && !seq.resolved) {
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         "Tried to access node before being defined."
       )
@@ -209,7 +220,7 @@ async function resolveTag(
   if (!(options.schema instanceof Schema)) {
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         "No schema is defined to handle tags."
       )
@@ -223,7 +234,7 @@ async function resolveTag(
   if (!matchTag || !matchTag.resolve) {
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         "This tag is not found in the schema."
       )
@@ -239,7 +250,7 @@ async function resolveTag(
       (err) => {
         tempState.errors.push(
           new YAMLExprError(
-            tempState.range,
+            tempState.pos,
             "",
             `Error while resolving tag: ${err}.`
           )
@@ -251,7 +262,7 @@ async function resolveTag(
   } catch (err) {
     tempState.errors.push(
       new YAMLExprError(
-        tempState.range,
+        tempState.pos,
         "",
         `Unkown error while resolving tag: ${err}.`
       )

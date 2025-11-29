@@ -1,10 +1,6 @@
 import { readFile } from "fs/promises";
 import { verifyPath } from "./utils/path.js";
-import {
-  deepClone,
-  getLinePosFromRange,
-  getLineStarts,
-} from "./utils/random.js";
+import { deepClone, getLinePosFromPos, getLineStarts } from "./utils/random.js";
 import {
   getParseEntery,
   setParseEntery,
@@ -170,7 +166,7 @@ export async function parseExtend(
     for (const e of ts.errors) {
       e.filename = ts.filename;
       e.path = ts.resolvedPath;
-      e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
+      e.linePos = getLinePosFromPos(ts.lineStarts, e.pos);
       e.message =
         e.message +
         ` This error occured in file: ${
@@ -226,7 +222,7 @@ function initTempState(path: string, options: Options): TempParseState {
     importedErrors: [],
     resolvedPath: resolvePath(basePath, path),
     filename: "",
-    range: [0, 0],
+    pos: [0, 0],
     anchors: new Map(),
     locals: [],
     resolveFunc: resolveUnknown,

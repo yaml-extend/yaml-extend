@@ -418,17 +418,25 @@ declare module "yaml" {
         isKey: boolean;
         resolvedKeyValue: unknown;
         tokens: TextToken[];
+        linePos: [LinePos, LinePos] | undefined;
+        pos: Pos | undefined;
     }
     interface YAMLMap<K = unknown, V = unknown> {
         resolved: boolean;
         resolvedValue: unknown;
+        linePos: [LinePos, LinePos] | undefined;
+        pos: Pos | undefined;
     }
     interface YAMLSeq<T = unknown> {
         resolved: boolean;
         resolvedValue: unknown;
+        linePos: [LinePos, LinePos] | undefined;
+        pos: Pos | undefined;
     }
     interface Alias {
         resolvedValue: unknown;
+        linePos: [LinePos, LinePos] | undefined;
+        pos: Pos | undefined;
     }
 }
 

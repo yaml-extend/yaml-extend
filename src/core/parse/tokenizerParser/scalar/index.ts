@@ -152,7 +152,7 @@ async function handleExprTokens(
         break;
 
       case ExprTokenType.TYPE:
-        ctx.type = { type: tok.text.trim() as "as scalar", tok };
+        if (tok.text) ctx.type = { type: tok.text.trim() as "as scalar", tok };
         break;
     }
   }

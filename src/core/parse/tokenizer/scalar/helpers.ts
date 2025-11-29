@@ -28,8 +28,8 @@ export function mergeScalarPosition(
   pos: [number, number],
   tempState: TempParseState
 ) {
-  pos[0] += tempState.range[0];
-  pos[1] += tempState.range[0];
+  pos[0] += tempState.pos[0];
+  pos[1] += tempState.pos[0];
 }
 
 export function readUntilClose<S extends BasicState>(

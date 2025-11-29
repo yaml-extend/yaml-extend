@@ -9,7 +9,7 @@ import type {
   YAMLSeq,
 } from "yaml";
 import type { YAMLError } from "../extendClasses/error.js";
-import type { Directives, TextToken } from "./tokenizer/tokenizerTypes.js";
+import type { Directives, Pos, TextToken } from "./tokenizer/tokenizerTypes.js";
 import type { DependencyHandler } from "./utils/depHandler.js";
 import type { ParseExtend } from "./index.js";
 
@@ -51,7 +51,7 @@ export type TempParseState = {
   importedErrors: YAMLError[];
   resolvedPath: string;
   filename: string;
-  range: [number, number];
+  pos: Pos;
   anchors: Map<string, unknown>;
   locals: Record<string, unknown>[];
   lineStarts: number[];

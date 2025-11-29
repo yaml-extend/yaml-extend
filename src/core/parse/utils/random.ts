@@ -1,4 +1,4 @@
-import { LinePos } from "../tokenizer/tokenizerTypes.js";
+import { LinePos, Pos } from "../tokenizer/tokenizerTypes.js";
 
 export function getValueFromText(text: string): unknown {
   // if empty string return null
@@ -125,12 +125,12 @@ export function binarySearchLine(
   return { line, col };
 }
 
-export function getLinePosFromRange(
+export function getLinePosFromPos(
   lineStarts: number[],
-  range: [number, number]
+  pos: Pos
 ): [LinePos, LinePos] | undefined {
-  const start = binarySearchLine(lineStarts, range[0]);
-  const end = binarySearchLine(lineStarts, range[1]);
+  const start = binarySearchLine(lineStarts, pos[0]);
+  const end = binarySearchLine(lineStarts, pos[1]);
   if (start == null || end == null) return;
   return [start, end];
 }

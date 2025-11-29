@@ -16,7 +16,7 @@ import {
   RawToken,
   LinePos,
 } from "../tokenizerTypes.js";
-import { getLinePosFromRange, getValueFromText } from "../../utils/random.js";
+import { getLinePosFromPos, getValueFromText } from "../../utils/random.js";
 import { TempParseState } from "../../parseTypes.js";
 
 // main function
@@ -72,7 +72,7 @@ function nextArgsToken(
     start = state.pos;
     pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     eofToken = {
       type: KeyValueTokenType.EOF,
       raw: "",
@@ -93,7 +93,7 @@ function nextArgsToken(
       value = readValue.text;
       pos = [start, state.pos];
       mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       equalToken = {
         type: KeyValueTokenType.EQUAL,
         raw: readValue.raw,
@@ -127,7 +127,7 @@ function readQuoted(
     : readValue.text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  const linePos = getLinePosFromPos(tempState.lineStarts, pos);
   const tok: KeyValueToken = {
     type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
     raw: readValue.raw,
@@ -156,7 +156,7 @@ function readUnQuoted(
     : readValue.text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  const linePos = getLinePosFromPos(tempState.lineStarts, pos);
   const tok: KeyValueToken = {
     type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
     raw: readValue.raw,

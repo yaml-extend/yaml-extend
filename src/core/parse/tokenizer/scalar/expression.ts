@@ -20,7 +20,7 @@ import {
   type TokenizeTextFunc,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
-import { getLinePosFromRange } from "../../utils/random.js";
+import { getLinePosFromPos } from "../../utils/random.js";
 
 // main function
 export function tokenizeExpr(
@@ -87,7 +87,7 @@ function nextExprToken(
     start = state.pos;
     pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     eofToken = {
       type: ExprTokenType.EOF,
       raw: "",
@@ -109,7 +109,7 @@ function nextExprToken(
       value = readValue.text;
       pos = [start, state.pos];
       mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       dotToken = {
         type: ExprTokenType.DOT,
         raw: readValue.raw,
@@ -135,7 +135,7 @@ function nextExprToken(
       value = readValue.text;
       pos = [start, state.pos];
       mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       omToken = {
         raw: readValue.raw,
         text: readValue.text,
@@ -152,7 +152,7 @@ function nextExprToken(
       value = readValue.text;
       pos = [start, state.pos];
       mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       argsToken = {
         type: ExprTokenType.ARGS,
         raw: readValue.raw,
@@ -170,7 +170,7 @@ function nextExprToken(
       value = readValue.text;
       pos = [start, state.pos];
       if (parentTok) mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       cmToken = {
         raw: readValue.raw,
         text: readValue.text,
@@ -200,7 +200,7 @@ function nextExprToken(
       value = readValue.text;
       pos = [start, state.pos];
       mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       wsToken = {
         type: ExprTokenType.WHITE_SPACE,
         raw: readValue.raw,
@@ -222,7 +222,7 @@ function nextExprToken(
       value = readValue.text;
       pos = [start, state.pos];
       mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       typeToken = {
         type: ExprTokenType.TYPE,
         raw: readValue.raw,
@@ -254,7 +254,7 @@ function readQuotedPath(
   const value = readValue.text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  const linePos = getLinePosFromPos(tempState.lineStarts, pos);
   const tok: ExprToken = {
     type: state.baseDefined ? ExprTokenType.PATH : ExprTokenType.BASE,
     raw: readValue.raw,
@@ -310,7 +310,7 @@ function readPath(
   const value = text;
   const pos: Pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
-  const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  const linePos = getLinePosFromPos(tempState.lineStarts, pos);
   const tok: ExprToken = {
     type: state.baseDefined ? ExprTokenType.PATH : ExprTokenType.BASE,
     raw,

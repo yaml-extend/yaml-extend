@@ -20,7 +20,7 @@ import {
   LinePos,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
-import { getLinePosFromRange } from "../../utils/random.js";
+import { getLinePosFromPos } from "../../utils/random.js";
 
 // main function
 export function tokenizeText(
@@ -92,7 +92,7 @@ function nextTextToken(
     pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     eofToken = {
       type: TextTokenType.EOF,
       raw: "",
@@ -117,7 +117,7 @@ function nextTextToken(
     pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     omToken = {
       raw: readValue.raw,
       text: readValue.text,
@@ -134,7 +134,7 @@ function nextTextToken(
     pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     exprToken = {
       type: TextTokenType.EXPR,
       raw: readValue.raw,
@@ -154,7 +154,7 @@ function nextTextToken(
       pos = [start, state.pos];
       if (depth === 0) mergeScalarPosition(pos, tempState);
       if (parentTok) mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromRange(tempState.lineStarts, pos);
+      linePos = getLinePosFromPos(tempState.lineStarts, pos);
       cmToken = {
         raw: readValue.raw,
         text: readValue.text,
@@ -181,7 +181,7 @@ function nextTextToken(
     pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     omToken = {
       raw: readValue.raw,
       text: readValue.text,
@@ -197,7 +197,7 @@ function nextTextToken(
     pos = [start, state.pos];
     if (depth === 0) mergeScalarPosition(pos, tempState);
     if (parentTok) mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     exprToken = {
       type: TextTokenType.EXPR,
       raw: readValue.raw,
@@ -223,7 +223,7 @@ function nextTextToken(
   pos = [start, state.pos];
   if (depth === 0) mergeScalarPosition(pos, tempState);
   if (parentTok) mergeTokenPosition(pos, parentTok);
-  linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  linePos = getLinePosFromPos(tempState.lineStarts, pos);
   textToken = {
     type: TextTokenType.TEXT,
     raw: readValue.raw,

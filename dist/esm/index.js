@@ -187,9 +187,9 @@ function binarySearchLine(lineStarts, absPosition) {
     const col = absPosition - lineStarts[line];
     return { line, col };
 }
-function getLinePosFromRange(lineStarts, range) {
-    const start = binarySearchLine(lineStarts, range[0]);
-    const end = binarySearchLine(lineStarts, range[1]);
+function getLinePosFromPos(lineStarts, pos) {
+    const start = binarySearchLine(lineStarts, pos[0]);
+    const end = binarySearchLine(lineStarts, pos[1]);
     if (start == null || end == null)
         return;
     return [start, end];
@@ -479,7 +479,7 @@ function tokenizeDirLine(line, strIdx, tempState) {
         }
         const value = getValueFromText(text);
         const pos = [strIdx + start, strIdx + end];
-        const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        const linePos = getLinePosFromPos(tempState.lineStarts, pos);
         tokens.push({
             raw,
             text,
@@ -703,7 +703,7 @@ function buildInnerRawToken(parentTok, absStart, absEnd, tempState) {
     }
     const value = getValueFromText(text);
     const pos = [absStart, absEnd];
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     return {
         raw,
         text,
@@ -723,7 +723,7 @@ function parseDirectiveFromTokens(tokens, rawLine, strIdx, tempState) {
         return null;
     // calc pos and linePos of the hole directive
     const pos = [strIdx, strIdx + rawLine.length];
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     // handle baseTok
     const rawBaseTok = tokens[0];
     const baseTok = rawBaseTok;
@@ -1301,8 +1301,8 @@ function mergeTokenPosition(pos, parentTok) {
     pos[1] += parentTok.pos[0];
 }
 function mergeScalarPosition(pos, tempState) {
-    pos[0] += tempState.range[0];
-    pos[1] += tempState.range[0];
+    pos[0] += tempState.pos[0];
+    pos[1] += tempState.pos[0];
 }
 function readUntilClose(state, start, openChar, closeChar, ignoreTextTrim) {
     var _a;
@@ -1521,7 +1521,7 @@ function nextArgsToken$1(state, tempState, parentTok) {
         start = state.pos;
         pos = [start, state.pos];
         mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         eofToken = {
             type: KeyValueTokenType.EOF,
             raw: "",
@@ -1541,7 +1541,7 @@ function nextArgsToken$1(state, tempState, parentTok) {
             value = readValue.text;
             pos = [start, state.pos];
             mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             equalToken = {
                 type: KeyValueTokenType.EQUAL,
                 raw: readValue.raw,
@@ -1572,7 +1572,7 @@ function readQuoted(state, tempState, parentTok) {
         : readValue.text;
     const pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     const tok = {
         type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
         raw: readValue.raw,
@@ -1596,7 +1596,7 @@ function readUnQuoted(state, tempState, parentTok) {
         : readValue.text;
     const pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     const tok = {
         type: state.afterEqual ? KeyValueTokenType.VALUE : KeyValueTokenType.KEY,
         raw: readValue.raw,
@@ -1659,7 +1659,7 @@ function nextArgsToken(state, tempState, parentTok) {
         start = state.pos;
         pos = [start, state.pos];
         mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         eofToken = {
             type: ArgsTokenType.EOF,
             raw: "",
@@ -1678,7 +1678,7 @@ function nextArgsToken(state, tempState, parentTok) {
         value = readValue.text;
         pos = [start, state.pos];
         mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         commaToken = {
             type: ArgsTokenType.COMMA,
             raw: readValue.raw,
@@ -1697,7 +1697,7 @@ function nextArgsToken(state, tempState, parentTok) {
     value = readValue.text;
     pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     keyValueToken = {
         type: ArgsTokenType.KEY_VALUE,
         raw: readValue.raw,
@@ -1765,7 +1765,7 @@ function nextExprToken(state, tempState, parentTok) {
         start = state.pos;
         pos = [start, state.pos];
         mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         eofToken = {
             type: ExprTokenType.EOF,
             raw: "",
@@ -1786,7 +1786,7 @@ function nextExprToken(state, tempState, parentTok) {
             value = readValue.text;
             pos = [start, state.pos];
             mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             dotToken = {
                 type: ExprTokenType.DOT,
                 raw: readValue.raw,
@@ -1811,7 +1811,7 @@ function nextExprToken(state, tempState, parentTok) {
             value = readValue.text;
             pos = [start, state.pos];
             mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             omToken = {
                 raw: readValue.raw,
                 text: readValue.text,
@@ -1828,7 +1828,7 @@ function nextExprToken(state, tempState, parentTok) {
             value = readValue.text;
             pos = [start, state.pos];
             mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             argsToken = {
                 type: ExprTokenType.ARGS,
                 raw: readValue.raw,
@@ -1847,7 +1847,7 @@ function nextExprToken(state, tempState, parentTok) {
             pos = [start, state.pos];
             if (parentTok)
                 mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             cmToken = {
                 raw: readValue.raw,
                 text: readValue.text,
@@ -1876,7 +1876,7 @@ function nextExprToken(state, tempState, parentTok) {
             value = readValue.text;
             pos = [start, state.pos];
             mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             wsToken = {
                 type: ExprTokenType.WHITE_SPACE,
                 raw: readValue.raw,
@@ -1897,7 +1897,7 @@ function nextExprToken(state, tempState, parentTok) {
             value = readValue.text;
             pos = [start, state.pos];
             mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             typeToken = {
                 type: ExprTokenType.TYPE,
                 raw: readValue.raw,
@@ -1925,7 +1925,7 @@ function readQuotedPath(state, tempState, parentTok) {
     const value = readValue.text;
     const pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     const tok = {
         type: state.baseDefined ? ExprTokenType.PATH : ExprTokenType.BASE,
         raw: readValue.raw,
@@ -1974,7 +1974,7 @@ function readPath(state, tempState, parentTok) {
     const value = text;
     const pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    const linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    const linePos = getLinePosFromPos(tempState.lineStarts, pos);
     const tok = {
         type: state.baseDefined ? ExprTokenType.PATH : ExprTokenType.BASE,
         raw,
@@ -2050,7 +2050,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
             mergeScalarPosition(pos, tempState);
         if (parentTok)
             mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         eofToken = {
             type: TextTokenType.EOF,
             raw: "",
@@ -2076,7 +2076,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
             mergeScalarPosition(pos, tempState);
         if (parentTok)
             mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         omToken = {
             raw: readValue.raw,
             text: readValue.text,
@@ -2094,7 +2094,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
             mergeScalarPosition(pos, tempState);
         if (parentTok)
             mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         exprToken = {
             type: TextTokenType.EXPR,
             raw: readValue.raw,
@@ -2116,7 +2116,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
                 mergeScalarPosition(pos, tempState);
             if (parentTok)
                 mergeTokenPosition(pos, parentTok);
-            linePos = getLinePosFromRange(tempState.lineStarts, pos);
+            linePos = getLinePosFromPos(tempState.lineStarts, pos);
             cmToken = {
                 raw: readValue.raw,
                 text: readValue.text,
@@ -2143,7 +2143,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
             mergeScalarPosition(pos, tempState);
         if (parentTok)
             mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         omToken = {
             raw: readValue.raw,
             text: readValue.text,
@@ -2161,7 +2161,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
             mergeScalarPosition(pos, tempState);
         if (parentTok)
             mergeTokenPosition(pos, parentTok);
-        linePos = getLinePosFromRange(tempState.lineStarts, pos);
+        linePos = getLinePosFromPos(tempState.lineStarts, pos);
         exprToken = {
             type: TextTokenType.EXPR,
             raw: readValue.raw,
@@ -2187,7 +2187,7 @@ function nextTextToken(state, tempState, parentTok, depth) {
         mergeScalarPosition(pos, tempState);
     if (parentTok)
         mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     textToken = {
         type: TextTokenType.TEXT,
         raw: readValue.raw,
@@ -2588,7 +2588,8 @@ async function handleExprTokens(textToken, tokens, state, tempState) {
                     ctx.args.argsObj[k] = v;
                 break;
             case ExprTokenType.TYPE:
-                ctx.type = { type: tok.text.trim(), tok };
+                if (tok.text)
+                    ctx.type = { type: tok.text.trim(), tok };
                 break;
         }
     }
@@ -2785,11 +2786,15 @@ async function resolveUnknown(item, anchored, state, tempState) {
 // Helper methods.
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 function resolveAlias(alias, tempState) {
-    // update range
-    if (alias.range)
-        tempState.range = [alias.range[0], alias.range[1]];
+    // get postion and linePos of current node
+    alias.pos = alias.range ? [alias.range[0], alias.range[1]] : undefined;
+    alias.linePos =
+        alias.pos && getLinePosFromPos(tempState.lineStarts, alias.pos);
+    // update position of tempstate to the new position
+    if (alias.pos)
+        tempState.pos = alias.pos;
     else
-        tempState.range = [0, 0];
+        tempState.pos = [0, 0];
     // var to hold out value
     let out;
     // check if it's saved in aliases
@@ -2798,7 +2803,7 @@ function resolveAlias(alias, tempState) {
     if (present)
         out = tempState.anchors.get(alias.source);
     else
-        tempState.errors.push(new YAMLExprError(tempState.range, "", "No anchor is defined yet for this alias."));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", "No anchor is defined yet for this alias."));
     alias.resolvedValue = out;
     return out;
 }
@@ -2809,15 +2814,18 @@ function resolveAlias(alias, tempState) {
  * @returns Value of the resolved string (scalar in YAML).
  */
 async function resolveScalar(scalar, anchored, state, tempState) {
-    // update range
-    if (!anchored)
-        if (scalar.range)
-            tempState.range = [scalar.range[0], scalar.range[1]];
-        else
-            tempState.range = [0, 0];
+    // get postion and linePos of current node
+    scalar.pos = scalar.range ? [scalar.range[0], scalar.range[1]] : undefined;
+    scalar.linePos =
+        scalar.pos && getLinePosFromPos(tempState.lineStarts, scalar.pos);
+    // update position of tempstate to the new position
+    if (scalar.pos)
+        tempState.pos = scalar.pos;
+    else
+        tempState.pos = [0, 0];
     // Detect circular dependency
     if (anchored && !scalar.resolved) {
-        tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", "Tried to access node before being defined."));
         return undefined;
     }
     // Handle value
@@ -2844,15 +2852,17 @@ async function resolveScalar(scalar, anchored, state, tempState) {
  * @returns Value of the resolved object (mapping in YAML).
  */
 async function resolveMap(map, anchored, state, tempState) {
-    // update range
-    if (!anchored)
-        if (map.range)
-            tempState.range = [map.range[0], map.range[1]];
-        else
-            tempState.range = [0, 0];
+    // get postion and linePos of current node
+    map.pos = map.range ? [map.range[0], map.range[1]] : undefined;
+    map.linePos = map.pos && getLinePosFromPos(tempState.lineStarts, map.pos);
+    // update position of tempstate to the new position
+    if (map.pos)
+        tempState.pos = map.pos;
+    else
+        tempState.pos = [0, 0];
     // var to hold out value
     if (anchored && !map.resolved) {
-        tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", "Tried to access node before being defined."));
         return undefined;
     }
     // handle value
@@ -2876,15 +2886,17 @@ async function resolveMap(map, anchored, state, tempState) {
     return out;
 }
 async function resolveSeq(seq, anchored, state, tempState) {
-    // update range
-    if (!anchored)
-        if (seq.range)
-            tempState.range = [seq.range[0], seq.range[1]];
-        else
-            tempState.range = [0, 0];
+    // get postion and linePos of current node
+    seq.pos = seq.range ? [seq.range[0], seq.range[1]] : undefined;
+    seq.linePos = seq.pos && getLinePosFromPos(tempState.lineStarts, seq.pos);
+    // update position of tempstate to the new position
+    if (seq.pos)
+        tempState.pos = seq.pos;
+    else
+        tempState.pos = [0, 0];
     // check resolve status
     if (anchored && !seq.resolved) {
-        tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", "Tried to access node before being defined."));
         return undefined;
     }
     let res = [];
@@ -2905,14 +2917,14 @@ async function resolveTag(data, tag, tempState) {
     if (options.ignoreTags)
         return data;
     if (!(options.schema instanceof Schema)) {
-        tempState.errors.push(new YAMLExprError(tempState.range, "", "No schema is defined to handle tags."));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", "No schema is defined to handle tags."));
         return data;
     }
     const tags = options.schema.tags;
     // get matching tag from tags
     const matchTag = tags.find((t) => t.tag === tag);
     if (!matchTag || !matchTag.resolve) {
-        tempState.errors.push(new YAMLExprError(tempState.range, "", "This tag is not found in the schema."));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", "This tag is not found in the schema."));
         return data;
     }
     // execute tag's resolve
@@ -2920,12 +2932,12 @@ async function resolveTag(data, tag, tempState) {
         const resTag = matchTag.resolve(
         // @ts-ignore
         data, (err) => {
-            tempState.errors.push(new YAMLExprError(tempState.range, "", `Error while resolving tag: ${err}.`));
+            tempState.errors.push(new YAMLExprError(tempState.pos, "", `Error while resolving tag: ${err}.`));
         }, options);
         return resTag;
     }
     catch (err) {
-        tempState.errors.push(new YAMLExprError(tempState.range, "", `Unkown error while resolving tag: ${err}.`));
+        tempState.errors.push(new YAMLExprError(tempState.pos, "", `Unkown error while resolving tag: ${err}.`));
         return data;
     }
 }
@@ -3234,7 +3246,7 @@ async function parseExtend(path, options = {}, source, state) {
         for (const e of ts.errors) {
             e.filename = ts.filename;
             e.path = ts.resolvedPath;
-            e.linePos = getLinePosFromRange(ts.lineStarts, e.pos);
+            e.linePos = getLinePosFromPos(ts.lineStarts, e.pos);
             e.message =
                 e.message +
                     ` This error occured in file: ${e.filename ? e.filename : "Not defined"}, at path: ${e.path}`;
@@ -3284,7 +3296,7 @@ function initTempState(path, options) {
         importedErrors: [],
         resolvedPath: resolve$1(basePath, path),
         filename: "",
-        range: [0, 0],
+        pos: [0, 0],
         anchors: new Map(),
         locals: [],
         resolveFunc: resolveUnknown,

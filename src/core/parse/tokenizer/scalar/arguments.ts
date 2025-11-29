@@ -16,7 +16,7 @@ import {
   type TokenizeTextFunc,
 } from "../tokenizerTypes.js";
 import { TempParseState } from "../../parseTypes.js";
-import { getLinePosFromRange } from "../../utils/random.js";
+import { getLinePosFromPos } from "../../utils/random.js";
 
 // main function
 export function tokenizeArgs(
@@ -78,7 +78,7 @@ function nextArgsToken(
     start = state.pos;
     pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     eofToken = {
       type: ArgsTokenType.EOF,
       raw: "",
@@ -98,7 +98,7 @@ function nextArgsToken(
     value = readValue.text;
     pos = [start, state.pos];
     mergeTokenPosition(pos, parentTok);
-    linePos = getLinePosFromRange(tempState.lineStarts, pos);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
     commaToken = {
       type: ArgsTokenType.COMMA,
       raw: readValue.raw,
@@ -119,7 +119,7 @@ function nextArgsToken(
   value = readValue.text;
   pos = [start, state.pos];
   mergeTokenPosition(pos, parentTok);
-  linePos = getLinePosFromRange(tempState.lineStarts, pos);
+  linePos = getLinePosFromPos(tempState.lineStarts, pos);
   keyValueToken = {
     type: ArgsTokenType.KEY_VALUE,
     raw: readValue.raw,

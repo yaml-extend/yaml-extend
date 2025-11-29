@@ -1,5 +1,5 @@
 import { YAMLError as YAMLError$1, parseDocument, YAMLParseError as YAMLParseError$1, YAMLWarning as YAMLWarning$1, YAMLMap, Scalar, YAMLSeq, Alias, Schema } from 'yaml';
-export { Schema } from 'yaml';
+export { Alias, Scalar, Schema, YAMLMap, YAMLSeq } from 'yaml';
 import { readFile } from 'fs/promises';
 import { existsSync, realpathSync } from 'fs';
 import { parse, relative, dirname, resolve as resolve$1 } from 'path';
@@ -2770,7 +2770,7 @@ async function resolve(state, tempState, cache) {
  * @param ctx - Context object that holds data about this resolve.
  * @returns Value of the specific resolve function based on type.
  */
-async function resolveUnknown(item, anchored, state, tempState, isKey) {
+async function resolveUnknown(item, anchored, state, tempState) {
     if (item instanceof Alias)
         return resolveAlias(item, tempState);
     if (item instanceof YAMLSeq)
@@ -2789,7 +2789,7 @@ function resolveAlias(alias, tempState) {
     if (alias.range)
         tempState.range = [alias.range[0], alias.range[1]];
     else
-        tempState.range = [0, 99999];
+        tempState.range = [0, 0];
     // var to hold out value
     let out;
     // check if it's saved in aliases
@@ -2808,13 +2808,13 @@ function resolveAlias(alias, tempState) {
  * @param id - Unique id generated for this resolve executiion, used to access cache.
  * @returns Value of the resolved string (scalar in YAML).
  */
-async function resolveScalar(scalar, anchored, state, tempState, isKey) {
+async function resolveScalar(scalar, anchored, state, tempState) {
     // update range
     if (!anchored)
         if (scalar.range)
             tempState.range = [scalar.range[0], scalar.range[1]];
         else
-            tempState.range = [0, 99999];
+            tempState.range = [0, 0];
     // Detect circular dependency
     if (anchored && !scalar.resolved) {
         tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
@@ -2849,7 +2849,7 @@ async function resolveMap(map, anchored, state, tempState) {
         if (map.range)
             tempState.range = [map.range[0], map.range[1]];
         else
-            tempState.range = [0, 99999];
+            tempState.range = [0, 0];
     // var to hold out value
     if (anchored && !map.resolved) {
         tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));
@@ -2881,7 +2881,7 @@ async function resolveSeq(seq, anchored, state, tempState) {
         if (seq.range)
             tempState.range = [seq.range[0], seq.range[1]];
         else
-            tempState.range = [0, 99999];
+            tempState.range = [0, 0];
     // check resolve status
     if (anchored && !seq.resolved) {
         tempState.errors.push(new YAMLExprError(tempState.range, "", "Tried to access node before being defined."));

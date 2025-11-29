@@ -39,8 +39,7 @@ export async function resolveUnknown(
   item: unknown,
   anchored: boolean,
   state: ParseState,
-  tempState: TempParseState,
-  isKey?: boolean
+  tempState: TempParseState
 ): Promise<unknown> {
   if (item instanceof Alias) return resolveAlias(item, tempState);
   if (item instanceof YAMLSeq)
@@ -48,7 +47,7 @@ export async function resolveUnknown(
   if (item instanceof YAMLMap)
     return await resolveMap(item, anchored, state, tempState);
   if (item instanceof Scalar)
-    return await resolveScalar(item, anchored, state, tempState, isKey);
+    return await resolveScalar(item, anchored, state, tempState);
 
   return item;
 }
@@ -60,7 +59,7 @@ export async function resolveUnknown(
 function resolveAlias(alias: Alias, tempState: TempParseState) {
   // update range
   if (alias.range) tempState.range = [alias.range[0], alias.range[1]];
-  else tempState.range = [0, 99999];
+  else tempState.range = [0, 0];
   // var to hold out value
   let out: unknown;
   // check if it's saved in aliases
@@ -89,13 +88,12 @@ async function resolveScalar(
   scalar: Scalar,
   anchored: boolean,
   state: ParseState,
-  tempState: TempParseState,
-  isKey?: boolean
+  tempState: TempParseState
 ): Promise<unknown> {
   // update range
   if (!anchored)
     if (scalar.range) tempState.range = [scalar.range[0], scalar.range[1]];
-    else tempState.range = [0, 99999];
+    else tempState.range = [0, 0];
   // Detect circular dependency
   if (anchored && !scalar.resolved) {
     tempState.errors.push(
@@ -137,7 +135,7 @@ async function resolveMap(
   // update range
   if (!anchored)
     if (map.range) tempState.range = [map.range[0], map.range[1]];
-    else tempState.range = [0, 99999];
+    else tempState.range = [0, 0];
   // var to hold out value
   if (anchored && !map.resolved) {
     tempState.errors.push(
@@ -152,7 +150,7 @@ async function resolveMap(
   // handle value
   let res: Record<string, unknown> = {};
   for (const pair of map.items) {
-    let hKey = await resolveUnknown(pair.key, anchored, state, tempState, true);
+    let hKey = await resolveUnknown(pair.key, anchored, state, tempState);
     let hVal = await resolveUnknown(pair.value, anchored, state, tempState);
     if (pair.key instanceof Scalar) {
       pair.key.resolvedKeyValue = hVal;
@@ -177,7 +175,7 @@ async function resolveSeq(
   // update range
   if (!anchored)
     if (seq.range) tempState.range = [seq.range[0], seq.range[1]];
-    else tempState.range = [0, 99999];
+    else tempState.range = [0, 0];
   // check resolve status
   if (anchored && !seq.resolved) {
     tempState.errors.push(

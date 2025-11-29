@@ -1,7 +1,7 @@
 import "yaml";
+import type { TextToken } from "./core/parse/tokenizer/tokenizerTypes.js";
 
 declare module "yaml" {
-  // Augmenting by adding resolved
   interface Scalar<T = unknown> {
     resolved: boolean;
     resolvedValue: unknown;
@@ -21,3 +21,6 @@ declare module "yaml" {
     resolvedValue: unknown;
   }
 }
+
+// Make this file a module so TS will include it when imported
+export {};

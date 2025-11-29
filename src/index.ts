@@ -1,4 +1,4 @@
-/// <reference path="./yaml-augment.d.ts" />
+import "./yaml-augment.js";
 export {
   Schema,
   CreateNodeOptions,
@@ -15,6 +15,7 @@ export {
 
 export { parseExtend } from "./core/parse/index.js";
 export * from "./core/extendClasses/error.js";
+export * from "./core/extendClasses/dataTypes.js";
 export { LiveParser } from "./core/liveParser/index.js";
 export {
   TextTokenType,

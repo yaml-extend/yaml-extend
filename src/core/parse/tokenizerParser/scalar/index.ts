@@ -37,14 +37,18 @@ export type Context = {
  * @returns Value returned from expression resolve.
  */
 export async function handleScalar(
-  input: string,
-  scalar: Scalar,
+  scalar: Scalar<string>,
   state: ParseState,
   tempState: TempParseState
 ): Promise<unknown> {
+  const input = scalar.pos
+    ? tempState.source.slice(scalar.pos[0], scalar.pos[1])
+    : scalar.value;
+  console.debug("Input: ", input);
   // tokenize scalar and tokens to scalar
   const tokens = tokenizeScalar(input, tempState);
   scalar.tokens = tokens;
+  console.dir(tokens, { depth: 10 });
   // handle tokens and return them
   return await handleTextTokens(tokens, state, tempState);
 }
@@ -340,7 +344,7 @@ async function handleArgTokens(
       prevTokenType = "keyValue";
       // resolve key value token
       const { key, value } = await handleKeyValueTokens(
-        tok.keyValueToks,
+        tok.keyValueTokens,
         state,
         tempState
       );
@@ -401,7 +405,7 @@ async function handleKeyValueTokens(
         );
       // handle value
       prevTokenType = "value";
-      value = await handleTextTokens(tok.valueToks, state, tempState);
+      value = await handleTextTokens(tok.valueTokens, state, tempState);
     }
   }
   return { key, value };

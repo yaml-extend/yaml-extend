@@ -114,7 +114,11 @@ async function resolveScalar(
   }
   // Handle value
   if (typeof scalar.value !== "string") return scalar.value;
-  let out: unknown = await handleScalar(scalar.value, scalar, state, tempState);
+  let out: unknown = await handleScalar(
+    scalar as Scalar<string>,
+    state,
+    tempState
+  );
   // handle tag if present
   if (scalar.tag) out = await resolveTag(scalar.value, scalar.tag, tempState);
   // handle anchor if present

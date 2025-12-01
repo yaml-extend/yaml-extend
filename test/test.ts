@@ -7,4 +7,4 @@ const parser = new LiveParser({
   ignoreTags: true,
 });
 const parsed1 = await parser.parse("./test/test.yaml");
-console.dir(parsed1.errors, { depth: 10 });
+// console.dir(parsed1, { depth: 10 });

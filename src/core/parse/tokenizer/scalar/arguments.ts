@@ -4,7 +4,7 @@ import {
   mergeTokenPosition,
   read,
   readUntilChar,
-} from "./helpers.js";
+} from "../helpers.js";
 import { tokenizeKeyValue } from "./keyValue.js";
 import {
   type ArgsToken,
@@ -38,7 +38,7 @@ export function tokenizeArgs(
   // resolve any value tokens using text tokenizer
   for (const t of tokens)
     if (t.type === ArgsTokenType.KEY_VALUE)
-      t.keyValueToks = tokenizeKeyValue(
+      t.keyValueTokens = tokenizeKeyValue(
         t.raw ?? "",
         t,
         tempState,
@@ -140,6 +140,5 @@ function initArgsTokenState(input: string): ArgsTokenizerState {
     len: input.length,
     pos: 0,
     line: 0,
-    absLineStart: 0,
   };
 }

@@ -40,6 +40,16 @@ export type RawToken<T> = {
   pos: Pos;
 };
 
+/**
+ * Minimal state used in tokenizers.
+ */
+export type BasicState = {
+  input: string;
+  len: number;
+  pos: number;
+  line: number;
+};
+
 ////////////////////////////////////////////////////////////////////////////////////
 ////// Directive tokenizer types
 
@@ -55,6 +65,62 @@ export type Directives = {
   import: ImportDirectiveToken[];
   version: YamlDirectiveToken[];
   errors: YAMLError[];
+};
+
+export enum DirectiveMainTokenTypes {
+  STRING = "STRING",
+  ARGS = "ARGS",
+  EOF = "EOF",
+}
+
+export enum DirectiveStringTokenTypes {
+  BASE = "BASE",
+  DATA = "DATA",
+  EOF = "EOF",
+}
+
+export enum DirectiveArgsTokenTypes {
+  KEY_VALUE = "KEY_VALUE",
+  COMMA = "COMMA",
+  EOF = "EOF",
+}
+
+export enum DirectiveKeyValueTokenTypes {
+  KEY = "KEY",
+  EQUAL = "EQUAL",
+  VALUE = "VALUE",
+  EOF = "EOF",
+}
+
+export type DirectiveMainTokenizerState = BasicState;
+
+export type DirectiveStringTokenizerState = BasicState;
+
+export type DirectiveArgsTonizerState = BasicState;
+
+export type DirectiveKeyValueTokenizerState = BasicState & {
+  afterEqual: boolean;
+};
+
+export type DirectiveMainToken = RawToken<string> & {
+  type: DirectiveMainTokenTypes;
+  stringTokens?: DirectiveStringToken[];
+  keyValueTokens?: DirectiveKeyValueToken[];
+  argsMarkOpen?: RawToken<string>;
+  argsMarkClose?: RawToken<string>;
+};
+
+export type DirectiveStringToken = RawToken<string> & {
+  type: DirectiveStringTokenTypes;
+};
+
+export type DirectiveArgsToken = RawToken<string> & {
+  type: DirectiveArgsTokenTypes;
+  keyValueTokens?: DirectiveKeyValueToken[];
+};
+
+export type DirectiveKeyValueToken = RawToken<string> & {
+  type: DirectiveKeyValueTokenTypes;
 };
 
 /**
@@ -179,17 +245,6 @@ export type DirectiveOf<T extends DirectiveToken["type"]> = Extract<
 ////// Scalar tokenizer types
 
 /**
- * Minimal state used in scalar tokenizer step.
- */
-export type BasicState = {
-  input: string;
-  len: number;
-  pos: number;
-  line: number;
-  absLineStart: number;
-};
-
-/**
  * State of text step of scalar tokenizer
  */
 export type TextTokenizerState = BasicState;
@@ -284,7 +339,7 @@ export type ExprToken = RawToken<string> & {
  */
 export type ArgsToken = RawToken<string> & {
   type: ArgsTokenType;
-  keyValueToks?: KeyValueToken[];
+  keyValueTokens?: KeyValueToken[];
 };
 
 /**
@@ -292,5 +347,5 @@ export type ArgsToken = RawToken<string> & {
  */
 export type KeyValueToken = RawToken<unknown> & {
   type: KeyValueTokenType;
-  valueToks?: TextToken[];
+  valueTokens?: TextToken[];
 };

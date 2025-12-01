@@ -1,5 +1,5 @@
-import type { BasicState, RawToken } from "../tokenizerTypes.js";
-import { TempParseState } from "../../parseTypes.js";
+import type { BasicState, RawToken } from "./tokenizerTypes.js";
+import { TempParseState } from "../parseTypes.js";
 
 // basic helpers
 export function current<S extends BasicState>(state: S): string {
@@ -8,9 +8,9 @@ export function current<S extends BasicState>(state: S): string {
 export function eof<S extends BasicState>(state: S): boolean {
   return state.pos >= state.len;
 }
-export function advance<S extends BasicState>(state: S, n = 1): number {
+export function advance<S extends BasicState>(state: S, n = 1): void {
   const steps = Math.min(n, state.len - state.pos); // safe guard from going beyond max length
-  return state.pos + steps;
+  state.pos += steps;
 }
 export function peek<S extends BasicState>(state: S, n = 1): string {
   return state.input.substr(state.pos, n);
@@ -55,7 +55,7 @@ export function readUntilClose<S extends BasicState>(
     const ch = current(state);
 
     if (ch === "\\") {
-      state.pos = advance(state);
+      advance(state);
       if (eof(state)) break;
       const esc = current(state);
       const map: Record<string, string> = {
@@ -67,7 +67,7 @@ export function readUntilClose<S extends BasicState>(
         "\\": "\\",
       };
       out += map[esc] ?? esc;
-      state.pos = advance(state);
+      advance(state);
       continue;
     }
 
@@ -79,7 +79,7 @@ export function readUntilClose<S extends BasicState>(
     }
 
     out += ch;
-    state.pos = advance(state);
+    advance(state);
   }
 
   const raw = state.input.slice(start, state.pos);
@@ -95,7 +95,7 @@ export function read<S extends BasicState>(
   ignoreTextTrim?: boolean
 ): { raw: string; text: string; present: boolean } {
   if (eof(state)) return { raw: "", text: "", present: false };
-  state.pos = advance(state, steps);
+  advance(state, steps);
   const raw = state.input.slice(start, state.pos);
   const text = ignoreTextTrim ? raw : raw.trim();
   return { raw, text, present: true };
@@ -120,7 +120,7 @@ export function readUntilChar<S extends BasicState>(
     const ch = current(state);
 
     if (ch === "\\") {
-      state.pos = advance(state);
+      advance(state);
       if (eof(state)) break;
       const esc = current(state);
       const map: Record<string, string> = {
@@ -132,14 +132,14 @@ export function readUntilChar<S extends BasicState>(
         "\\": "\\",
       };
       out += map[esc] ?? esc;
-      state.pos = advance(state);
+      advance(state);
       continue;
     }
 
     if (checkStop(ch)) break;
 
     out += ch;
-    state.pos = advance(state);
+    advance(state);
   }
 
   const raw = state.input.slice(start, state.pos);
@@ -171,7 +171,7 @@ export function readUntilCharInclusive<S extends BasicState>(
     const ch = current(state);
 
     if (ch === "\\") {
-      state.pos = advance(state);
+      advance(state);
       if (eof(state)) break;
       const esc = current(state);
       const map: Record<string, string> = {
@@ -183,18 +183,18 @@ export function readUntilCharInclusive<S extends BasicState>(
         "\\": "\\",
       };
       out += map[esc] ?? esc;
-      state.pos = advance(state);
+      advance(state);
       continue;
     }
 
     if (checkStop(ch) && !firstChar) {
       out += ch;
-      state.pos = advance(state);
+      advance(state);
       break;
     }
 
     out += ch;
-    state.pos = advance(state);
+    advance(state);
     firstChar = false;
   }
 

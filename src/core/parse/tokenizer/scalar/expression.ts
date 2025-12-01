@@ -7,7 +7,7 @@ import {
   read,
   readUntilChar,
   readUntilCharInclusive,
-} from "./helpers.js";
+} from "../helpers.js";
 import { tokenizeArgs } from "./arguments.js";
 import {
   type ExprToken,
@@ -33,7 +33,7 @@ export function tokenizeExpr(
   // handle tokens
   let tokens: ExprToken[] = [];
   let state = initExprTokenState(input);
-  while (!eof(state) && /\s/.test(current(state))) state.pos = advance(state); // skip white space at the start
+  while (!eof(state) && /\s/.test(current(state))) advance(state); // skip white space at the start
   while (true) {
     const toks = nextExprToken(state, tempState, textTok);
     tokens.push(...toks);
@@ -105,24 +105,20 @@ function nextExprToken(
   if (ch === "." && !state.afterWhiteSpace) {
     start = state.pos;
     readValue = read(state, start, 1);
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromPos(tempState.lineStarts, pos);
-      dotToken = {
-        type: ExprTokenType.DOT,
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-      };
-    }
-    if (dotToken) {
-      tokens.push(dotToken);
-    }
+    value = readValue.text;
+    pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
+    dotToken = {
+      type: ExprTokenType.DOT,
+      raw: readValue.raw,
+      text: readValue.text,
+      value,
+      quoted: false,
+      linePos,
+      pos,
+    };
+    tokens.push(dotToken);
     return tokens;
   }
 
@@ -131,42 +127,40 @@ function nextExprToken(
     // make open mark token
     start = state.pos;
     readValue = read(state, start, 1);
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromPos(tempState.lineStarts, pos);
-      omToken = {
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-      };
-    }
+    value = readValue.text;
+    pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
+    omToken = {
+      raw: readValue.raw,
+      text: readValue.text,
+      value,
+      quoted: false,
+      linePos,
+      pos,
+    };
+
     // read arguments until ")" mark
     start = state.pos;
     readValue = readUntilClose(state, start, "(", ")");
-    if (readValue) {
-      value = readValue.text;
-      pos = [start, state.pos];
-      mergeTokenPosition(pos, parentTok);
-      linePos = getLinePosFromPos(tempState.lineStarts, pos);
-      argsToken = {
-        type: ExprTokenType.ARGS,
-        raw: readValue.raw,
-        text: readValue.text,
-        value,
-        quoted: false,
-        linePos,
-        pos,
-      };
-    }
+    value = readValue.text;
+    pos = [start, state.pos];
+    mergeTokenPosition(pos, parentTok);
+    linePos = getLinePosFromPos(tempState.lineStarts, pos);
+    argsToken = {
+      type: ExprTokenType.ARGS,
+      raw: readValue.raw,
+      text: readValue.text,
+      value,
+      quoted: false,
+      linePos,
+      pos,
+    };
+
     // make close mark token
     start = state.pos;
     readValue = read(state, start, 1);
-    if (readValue) {
+    if (readValue.text) {
       value = readValue.text;
       pos = [start, state.pos];
       if (parentTok) mergeTokenPosition(pos, parentTok);
@@ -181,13 +175,11 @@ function nextExprToken(
       };
     }
     // if main token (arguments token) is present push it
-    if (argsToken) {
-      argsToken.argsMarkOpen = omToken;
-      argsToken.argsMarkClose = cmToken;
-      tokens.push(argsToken);
-      // set after paren to true to prevent identifying other arguments block in the expression
-      state.afterParen = true;
-    }
+    argsToken.argsMarkOpen = omToken;
+    argsToken.argsMarkClose = cmToken;
+    tokens.push(argsToken);
+    // set after paren to true to prevent identifying other arguments block in the expression
+    state.afterParen = true;
     return tokens;
   }
 
@@ -285,7 +277,7 @@ function readPath(
     if (ch === "." || (ch === "(" && !state.afterParen) || /\s/.test(ch)) break;
 
     if (ch === "\\") {
-      state.pos = advance(state);
+      advance(state);
       if (eof(state)) break;
       const esc = current(state);
       const map: Record<string, string> = {
@@ -297,12 +289,12 @@ function readPath(
         "\\": "\\",
       };
       out += map[esc] ?? esc;
-      state.pos = advance(state);
+      advance(state);
       continue;
     }
 
     out += ch;
-    state.pos = advance(state);
+    advance(state);
   }
 
   const raw = state.input.slice(start, state.pos);
@@ -331,7 +323,6 @@ function initExprTokenState(input: string): ExprTokenizerState {
     len: input.length,
     pos: 0,
     line: 0,
-    absLineStart: 0,
     baseDefined: false,
     afterParen: false,
     afterWhiteSpace: false,

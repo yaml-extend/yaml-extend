@@ -5,7 +5,7 @@ import {
   read,
   readUntilChar,
   readUntilCharInclusive,
-} from "./helpers.js";
+} from "../helpers.js";
 import {
   type KeyValueToken,
   KeyValueTokenType,
@@ -13,7 +13,6 @@ import {
   type ArgsToken,
   type TokenizeTextFunc,
   Pos,
-  RawToken,
   LinePos,
 } from "../tokenizerTypes.js";
 import { getLinePosFromPos, getValueFromText } from "../../utils/random.js";
@@ -39,7 +38,7 @@ export function tokenizeKeyValue(
   // resolve any value tokens using text tokenizer
   for (const t of tokens)
     if (t.type === KeyValueTokenType.VALUE)
-      t.valueToks = tokenizeTextFunc(t.raw ?? "", t, tempState, depth);
+      t.valueTokens = tokenizeTextFunc(t.raw ?? "", t, tempState, depth);
 
   // return
   return tokens;
@@ -62,7 +61,7 @@ function nextArgsToken(
 
   // define vars
   let start: number;
-  let readValue: { raw: string; text: string } | undefined;
+  let readValue: { raw: string; text: string; present: boolean };
   let value: string;
   let pos: Pos;
   let linePos: [LinePos, LinePos] | undefined;
@@ -177,7 +176,6 @@ function initArgsTokenState(input: string): KeyValueTokenizerState {
     len: input.length,
     pos: 0,
     line: 0,
-    absLineStart: 0,
     afterEqual: false,
   };
 }

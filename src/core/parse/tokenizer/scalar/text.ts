@@ -8,7 +8,7 @@ import {
   read,
   readUntilChar,
   advance,
-} from "./helpers.js";
+} from "../helpers.js";
 import { tokenizeExpr } from "./expression.js";
 import {
   type TextToken,
@@ -32,7 +32,7 @@ export function tokenizeText(
   // handle tokens
   let state = initTextTokenizerState(input);
   let tokens: TextToken[] = [];
-  while (!eof(state) && /\s/.test(current(state))) state.pos = advance(state); // skip white space at the start
+  while (!eof(state) && /\s/.test(current(state))) advance(state); // skip white space at the start
   while (true) {
     const toks = nextTextToken(state, tempState, keyValueTok, depth);
     tokens.push(...toks);
@@ -247,6 +247,5 @@ function initTextTokenizerState(input: string): TextTokenizerState {
     len: input.length,
     pos: 0,
     line: 0,
-    absLineStart: 0,
   };
 }

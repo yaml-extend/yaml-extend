@@ -1,4 +1,10 @@
 %PARAM kk kkboy
-%PRIVATE k
+%PRIVATE [ node99 ] [ node1.node2."node with space" ]
+%PRIVATE node99 node1.node2."node with space"
+%IMPORT alias "./test2.yaml" [ key1=value1, key2=value2 ]
 ---
-k: ${ param.kk( df = fef, m=ff, m = fg,f=g, f =f ) as key}
+node99: |
+  text ${import.dd.data(
+  name= $name,
+  value= value1
+  ) as scalar} text
